@@ -717,65 +717,65 @@ if uploaded_file is not None:
 
     if metode == "Holt-Winters Additive":
 
-    model = ExponentialSmoothing(
-        train,
-        trend='add',
-        seasonal='add',
-        seasonal_periods=12
-    )
-
-    fit = model.fit()
-
-    # Forecast untuk data test
-    forecast_test = fit.forecast(
-        len(test)
-    )
-
-    forecast_test = forecast_test.clip(
-        lower=0
-    )
-
-    mae = mean_absolute_error(
-        test,
-        forecast_test
-    )
-
-    rmse = np.sqrt(
-        mean_squared_error(
+        model = ExponentialSmoothing(
+            train,
+            trend='add',
+            seasonal='add',
+            seasonal_periods=12
+        )
+    
+        fit = model.fit()
+    
+        # Forecast untuk data test
+        forecast_test = fit.forecast(
+            len(test)
+        )
+    
+        forecast_test = forecast_test.clip(
+            lower=0
+        )
+    
+        mae = mean_absolute_error(
             test,
             forecast_test
         )
-    )
-
-    tampilkan_error_bulanan(
-        test,
-        forecast_test
-    )
-
-    # Forecast masa depan
-    model_full = ExponentialSmoothing(
-        data_produk,
-        trend='add',
-        seasonal='add',
-        seasonal_periods=12
-    )
-
-    fit_full = model_full.fit()
-
-    forecast_future = fit_full.forecast(
-        jumlah_forecast
-    )
-
-    forecast_future = forecast_future.clip(
-        lower=0
-    )
-
-    tampilkan_hasil(
-        "HW Additive",
-        forecast_future,
-        mae,
-        rmse
-    )
+    
+        rmse = np.sqrt(
+            mean_squared_error(
+                test,
+                forecast_test
+            )
+        )
+    
+        tampilkan_error_bulanan(
+            test,
+            forecast_test
+        )
+    
+        # Forecast masa depan
+        model_full = ExponentialSmoothing(
+            data_produk,
+            trend='add',
+            seasonal='add',
+            seasonal_periods=12
+        )
+    
+        fit_full = model_full.fit()
+    
+        forecast_future = fit_full.forecast(
+            jumlah_forecast
+        )
+    
+        forecast_future = forecast_future.clip(
+            lower=0
+        )
+    
+        tampilkan_hasil(
+            "HW Additive",
+            forecast_future,
+            mae,
+            rmse
+        )
 
     # ==========================================
     # HOLT WINTERS MULTIPLICATIVE
