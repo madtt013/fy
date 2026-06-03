@@ -492,6 +492,19 @@ if uploaded_file is not None:
     )
 
     # ==========================================
+    # TRAIN TEST SPLIT
+    # ==========================================
+
+    test_size = 6
+
+    train = data_produk[:-test_size]
+
+    test = data_produk[-test_size:]
+
+    st.write("Data Training :", len(train))
+    st.write("Data Testing :", len(test))
+
+    # ==========================================
     # PILIH METODE
     # ==========================================
 
@@ -547,6 +560,85 @@ if uploaded_file is not None:
     # FUNGSI TAMPILKAN HASIL
     # ==========================================
 
+    def tampilkan_error_bulanan(
+        actual,
+        forecast
+    ):
+
+    error_df = pd.DataFrame({
+        'Aktual': actual.values,
+        'Forecast': np.round(
+            forecast.values,
+            2
+        )
+    })
+
+    error_df['Error'] = (
+        error_df['Aktual']
+        - error_df['Forecast']
+    )
+
+    error_df['Absolute Error'] = (
+        error_df['Error']
+        .abs()
+    )
+
+    error_df['Squared Error'] = (
+        error_df['Error'] ** 2
+    )
+
+    error_df['MAE Running'] = (
+        error_df['Absolute Error']
+        .expanding()
+        .mean()
+    )
+
+    error_df['RMSE Running'] = (
+        error_df['Squared Error']
+        .expanding()
+        .mean()
+    ) ** 0.5
+
+    error_df.index = actual.index.strftime(
+        '%b-%Y'
+    )
+
+    st.subheader(
+        "📋 Error Per Bulan"
+    )
+
+    st.dataframe(
+        error_df,
+        use_container_width=True
+    )
+
+    fig_err, ax_err = plt.subplots(
+        figsize=(10,5)
+    )
+
+    ax_err.bar(
+        error_df.index,
+        error_df['Absolute Error']
+    )
+
+    ax_err.set_title(
+        'Absolute Error Per Bulan'
+    )
+
+    ax_err.set_ylabel(
+        'Error'
+    )    
+
+    ax_err.grid(
+        True,
+        linestyle='--',
+        alpha=0.5
+    )
+
+    st.pyplot(fig_err)
+
+    return error_df
+        
     def tampilkan_hasil(
         nama_metode,
         forecast,
@@ -625,41 +717,65 @@ if uploaded_file is not None:
 
     if metode == "Holt-Winters Additive":
 
-        model = ExponentialSmoothing(
-            data_produk,
-            trend='add',
-            seasonal='add',
-            seasonal_periods=12
-        )
+    model = ExponentialSmoothing(
+        train,
+        trend='add',
+        seasonal='add',
+        seasonal_periods=12
+    )
 
-        fit = model.fit()
+    fit = model.fit()
 
-        forecast = fit.forecast(
-            jumlah_forecast
-        )
+    # Forecast untuk data test
+    forecast_test = fit.forecast(
+        len(test)
+    )
 
-        forecast = forecast.clip(
-            lower=0
-        )
+    forecast_test = forecast_test.clip(
+        lower=0
+    )
 
-        mae = mean_absolute_error(
-            data_produk,
-            fit.fittedvalues
-        )
+    mae = mean_absolute_error(
+        test,
+        forecast_test
+    )
 
-        rmse = np.sqrt(
-            mean_squared_error(
-                data_produk,
-                fit.fittedvalues
-            )
+    rmse = np.sqrt(
+        mean_squared_error(
+            test,
+            forecast_test
         )
+    )
 
-        tampilkan_hasil(
-            "HW Additive",
-            forecast,
-            mae,
-            rmse
-        )
+    tampilkan_error_bulanan(
+        test,
+        forecast_test
+    )
+
+    # Forecast masa depan
+    model_full = ExponentialSmoothing(
+        data_produk,
+        trend='add',
+        seasonal='add',
+        seasonal_periods=12
+    )
+
+    fit_full = model_full.fit()
+
+    forecast_future = fit_full.forecast(
+        jumlah_forecast
+    )
+
+    forecast_future = forecast_future.clip(
+        lower=0
+    )
+
+    tampilkan_hasil(
+        "HW Additive",
+        forecast_future,
+        mae,
+        rmse
+    )
 
     # ==========================================
     # HOLT WINTERS MULTIPLICATIVE
