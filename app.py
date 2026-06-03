@@ -565,79 +565,79 @@ if uploaded_file is not None:
         forecast
     ):
 
-    error_df = pd.DataFrame({
-        'Aktual': actual.values,
-        'Forecast': np.round(
-            forecast.values,
-            2
+        error_df = pd.DataFrame({
+            'Aktual': actual.values,
+            'Forecast': np.round(
+                forecast.values,
+                2
+            )
+        })
+
+        error_df['Error'] = (
+            error_df['Aktual']
+            - error_df['Forecast']
         )
-    })
-
-    error_df['Error'] = (
-        error_df['Aktual']
-        - error_df['Forecast']
-    )
-
-    error_df['Absolute Error'] = (
-        error_df['Error']
-        .abs()
-    )
-
-    error_df['Squared Error'] = (
-        error_df['Error'] ** 2
-    )
-
-    error_df['MAE Running'] = (
-        error_df['Absolute Error']
-        .expanding()
-        .mean()
-    )
-
-    error_df['RMSE Running'] = (
-        error_df['Squared Error']
-        .expanding()
-        .mean()
-    ) ** 0.5
-
-    error_df.index = actual.index.strftime(
-        '%b-%Y'
-    )
-
-    st.subheader(
-        "📋 Error Per Bulan"
-    )
-
-    st.dataframe(
-        error_df,
-        use_container_width=True
-    )
-
-    fig_err, ax_err = plt.subplots(
-        figsize=(10,5)
-    )
-
-    ax_err.bar(
-        error_df.index,
-        error_df['Absolute Error']
-    )
-
-    ax_err.set_title(
-        'Absolute Error Per Bulan'
-    )
-
-    ax_err.set_ylabel(
-        'Error'
-    )    
-
-    ax_err.grid(
-        True,
-        linestyle='--',
-        alpha=0.5
-    )
-
-    st.pyplot(fig_err)
-
-    return error_df
+    
+        error_df['Absolute Error'] = (
+            error_df['Error']
+            .abs()
+        )
+    
+        error_df['Squared Error'] = (
+            error_df['Error'] ** 2
+        )
+    
+        error_df['MAE Running'] = (
+            error_df['Absolute Error']
+            .expanding()
+            .mean()
+        )
+    
+        error_df['RMSE Running'] = (
+            error_df['Squared Error']
+            .expanding()
+            .mean()
+        ) ** 0.5
+    
+        error_df.index = actual.index.strftime(
+            '%b-%Y'
+        )
+    
+        st.subheader(
+            "📋 Error Per Bulan"
+        )
+    
+        st.dataframe(
+            error_df,
+            use_container_width=True
+        )
+    
+        fig_err, ax_err = plt.subplots(
+            figsize=(10,5)
+        )
+    
+        ax_err.bar(
+            error_df.index,
+            error_df['Absolute Error']
+        )
+    
+        ax_err.set_title(
+            'Absolute Error Per Bulan'
+        )
+    
+        ax_err.set_ylabel(
+            'Error'
+        )    
+    
+        ax_err.grid(
+            True,
+            linestyle='--',
+            alpha=0.5
+        )
+    
+        st.pyplot(fig_err)
+    
+        return error_df
         
     def tampilkan_hasil(
         nama_metode,
