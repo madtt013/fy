@@ -50,9 +50,6 @@ h2, h3 { color: #1f4e79; }
 
 # ==========================================
 # CLUSTER-METHOD MAPPING
-# Setiap cluster memiliki metode forecasting
-# yang paling sesuai berdasarkan karakteristik
-# permintaannya.
 # ==========================================
 
 CLUSTER_METHOD_MAP = {
@@ -128,6 +125,11 @@ with st.expander("ℹ️ Panduan: Metode Forecasting per Cluster", expanded=Fals
     Menghasilkan forecast *flat* (konstan) — ini normal dan merupakan karakteristik metode ini.
     Nilai forecast = rata-rata ukuran demand ÷ rata-rata interval demand.
     Parameter **alpha** mengontrol seberapa cepat model beradaptasi (nilai kecil = lebih stabil, nilai besar = lebih responsif).
+    
+    **Catatan Data 2 Tahun (24 Bulan):**
+    Dengan data 24 bulan, seasonality yang digunakan adalah **6 bulan** (semi-tahunan),
+    karena model memerlukan minimal 2 siklus penuh. Seasonal period 12 bulan baru aktif
+    jika data training ≥ 24 bulan.
     """)
 
 # ==========================================
@@ -143,6 +145,16 @@ uploaded_file = st.file_uploader("Upload File Excel", type=["xlsx"])
 if uploaded_file is not None:
 
     df = pd.read_excel(uploaded_file)
+
+    # ==========================================
+    # [FIX 1] PEMBERSIHAN DATA
+    # Data mentah memiliki NaN pada kolom keluar
+    # (~25% baris) dan id_produk (beberapa baris).
+    # Baris tersebut dibuang agar tidak mempengaruhi
+    # pivot table dan metric dashboard.
+    # ==========================================
+    df = df.dropna(subset=['id_produk', 'keluar'])
+    df['keluar'] = df['keluar'].astype(int)
 
     st.subheader("📄 Data Awal")
     st.dataframe(df.head())
@@ -236,7 +248,6 @@ if uploaded_file is not None:
         mapping_cluster[cluster_avg.index[0]] = 'Fast Moving'
         mapping_cluster[cluster_avg.index[1]] = 'Medium Moving'
         mapping_cluster[cluster_avg.index[-1]] = 'Slow Moving'
-    # Untuk cluster > 3: sisanya juga masuk Medium Moving
     for idx in cluster_avg.index:
         if idx not in mapping_cluster:
             mapping_cluster[idx] = 'Medium Moving'
@@ -259,7 +270,6 @@ if uploaded_file is not None:
     st.subheader("📊 Jumlah Produk per Cluster & Metode Forecasting")
     st.dataframe(tabel_cluster, use_container_width=True)
 
-    # Tampilkan rationale setiap cluster
     for kat, info in CLUSTER_METHOD_MAP.items():
         if kat in cluster_count.index:
             st.info(f"{info['icon']} **{kat}** → {info['label']}\n\n{info['rationale']}")
@@ -309,7 +319,6 @@ if uploaded_file is not None:
     data_produk = data_produk.drop(['Cluster', 'Kategori', 'Total'])
     data_produk = pd.to_numeric(data_produk)
 
-    # Index tanggal disesuaikan dengan data
     data_produk.index = pd.date_range(
         start=first_month,
         periods=len(data_produk),
@@ -336,7 +345,6 @@ if uploaded_file is not None:
         f"Metode rekomendasi: **{label_rekomendasi}**"
     )
 
-    # Pilihan metode: default sesuai cluster, bisa diganti manual
     daftar_metode = [
         "HW Additive",
         "HW Multiplicative",
@@ -355,7 +363,6 @@ if uploaded_file is not None:
 
     jumlah_forecast = st.slider("Jumlah Forecast Bulan", 1, 12, 6)
 
-    # Slider alpha hanya muncul jika metode Croston dipilih
     croston_alpha = 0.1
     if metode == 'Croston' or metode == 'Perbandingan Semua Metode':
         croston_alpha = st.slider(
@@ -386,17 +393,31 @@ if uploaded_file is not None:
     )
 
     # ==========================================
-    # HELPER: SEASONAL PERIODS OTOMATIS
+    # [FIX 2] SEASONAL PERIODS OTOMATIS
+    #
+    # PERUBAHAN dari kode sebelumnya:
+    #   Lama: n_train >= 25 → sp=12, n_train >= 13 → sp=6
+    #   Baru: n_train >= 24 → sp=12, n_train >= 12 → sp=6
+    #
+    # Alasan:
+    # - sp=12 membutuhkan minimal 2×12=24 titik data train.
+    #   Threshold 25 tidak akan pernah tercapai dengan data
+    #   24 bulan (train maksimal = 23 saat forecast=1).
+    #   Threshold 24 lebih tepat secara statistik.
+    #
+    # - sp=6 membutuhkan minimal 2×6=12 titik data train.
+    #   Threshold lama (13) menyebabkan bug: ketika
+    #   forecast=12, n_train=12 → sp=1 (tanpa seasonality!).
+    #   Threshold baru (12) memperbaiki ini.
     # ==========================================
 
     def get_sp(n_train):
-        """Seasonal periods berdasarkan ukuran data train."""
-        if n_train >= 25:
+        if n_train >= 24:   # sp=12: butuh minimal 2×12=24 data  [DIUBAH dari 25]
             return 12
-        elif n_train >= 13:
+        elif n_train >= 12: # sp=6 : butuh minimal 2×6 =12 data  [DIUBAH dari 13]
             return 6
         else:
-            return 1   # no seasonality
+            return 1        # data terlalu sedikit → tanpa seasonality
 
     # ==========================================
     # GRAFIK DATA AKTUAL
@@ -429,15 +450,7 @@ if uploaded_file is not None:
     }
 
     # ==========================================
-    # HELPER: CROSTON'S METHOD (implementasi manual)
-    # Dirancang khusus untuk intermittent demand.
-    # Tidak butuh library eksternal — hanya numpy+pandas.
-    #
-    # Cara kerja:
-    #   1. Pisahkan periode demand (nilai>0) dari nol
-    #   2. Smooth ukuran demand (z) dengan exponential smoothing
-    #   3. Smooth interval antar demand (p) dengan exponential smoothing
-    #   4. Forecast rate = z / p  (flat / konstan untuk semua periode)
+    # HELPER: CROSTON'S METHOD
     # ==========================================
 
     def croston_forecast(series, steps, alpha=0.1):
@@ -446,26 +459,22 @@ if uploaded_file is not None:
 
         non_zero = np.where(data > 0)[0]
 
-        # Jika semua nol → forecast nol
         if len(non_zero) == 0:
             idx = pd.date_range(series.index[-1], periods=steps + 1, freq='ME')[1:]
             return pd.Series(np.zeros(steps), index=idx)
 
-        # Inisialisasi dengan nilai non-zero pertama
-        z = float(data[non_zero[0]])    # smoothed demand size
-        p = float(non_zero[0] + 1)     # smoothed inter-demand interval
-        q = 1                            # counter sejak demand terakhir
+        z = float(data[non_zero[0]])
+        p = float(non_zero[0] + 1)
+        q = 1
 
-        # Update loop
         for i in range(non_zero[0] + 1, n):
             if data[i] > 0:
-                z = alpha * data[i] + (1 - alpha) * z   # update ukuran demand
-                p = alpha * q       + (1 - alpha) * p   # update interval
+                z = alpha * data[i] + (1 - alpha) * z
+                p = alpha * q       + (1 - alpha) * p
                 q = 1
             else:
                 q += 1
 
-        # Forecast: rate konstan (flat) = ukuran / interval
         rate = max(0.0, z / p)
 
         idx = pd.date_range(series.index[-1], periods=steps + 1, freq='ME')[1:]
@@ -506,7 +515,6 @@ if uploaded_file is not None:
         elif nama_metode == 'ARIMA':
             return ARIMA(train_data, order=(1, 1, 1)).fit()
         elif nama_metode == 'Croston':
-            # Croston tidak punya objek model — langsung kembalikan parameter
             return {'series': train_data, 'alpha': croston_alpha, 'type': 'croston'}
         else:
             raise ValueError(f"Metode tidak dikenal: {nama_metode}")
@@ -524,7 +532,6 @@ if uploaded_file is not None:
     # ==========================================
 
     def retrain_full(nama_metode, full_data, steps, croston_alpha=0.1):
-        """Retrain dengan seluruh data, forecast ke depan."""
         model = fit_model(nama_metode, full_data, croston_alpha)
         return forecast_model(model, nama_metode, steps, croston_alpha)
 
@@ -536,7 +543,6 @@ if uploaded_file is not None:
 
         label_rekomendasi_txt = " ✅ (Rekomendasi Cluster)" if is_rekomendasi else ""
 
-        # --- EVALUASI ---
         mae  = mean_absolute_error(test_actual.values, forecast_eval.values)
         rmse = np.sqrt(mean_squared_error(test_actual.values, forecast_eval.values))
 
@@ -582,7 +588,6 @@ if uploaded_file is not None:
         ax_eval.grid(True, linestyle='--', alpha=0.5)
         st.pyplot(fig_eval)
 
-        # --- FORECAST KE DEPAN ---
         st.subheader(f"🔮 Forecast ke Depan — {nama_metode}{label_rekomendasi_txt}")
         st.info(
             f"Model di-retrain menggunakan seluruh **{len(data_produk)} bulan** data, "
@@ -672,7 +677,6 @@ if uploaded_file is not None:
             st.error("Semua metode gagal. Coba kurangi jumlah forecast.")
             st.stop()
 
-        # Tabel MAE & RMSE
         perbandingan = pd.DataFrame([
             {
                 'Metode':             m,
@@ -687,7 +691,6 @@ if uploaded_file is not None:
         st.subheader("📊 Perbandingan MAE & RMSE Semua Metode")
         st.dataframe(perbandingan, use_container_width=True)
 
-        # Grafik MAE
         fig_mae, ax_mae = plt.subplots(figsize=(10, 5))
         bar_colors = [
             '#e74c3c' if m == metode_rekomendasi else warna_metode.get(m, 'gray')
@@ -700,7 +703,6 @@ if uploaded_file is not None:
         ax_mae.grid(True, linestyle='--', alpha=0.5)
         st.pyplot(fig_mae)
 
-        # Grafik RMSE
         fig_rmse, ax_rmse = plt.subplots(figsize=(10, 5))
         bars2 = ax_rmse.bar(perbandingan['Metode'], perbandingan['RMSE'], color=bar_colors)
         ax_rmse.bar_label(bars2, fmt='%.2f', padding=3)
@@ -709,7 +711,6 @@ if uploaded_file is not None:
         ax_rmse.grid(True, linestyle='--', alpha=0.5)
         st.pyplot(fig_rmse)
 
-        # Metode terbaik (MAE terkecil)
         best_idx       = perbandingan['MAE'].idxmin()
         metode_terbaik = perbandingan.loc[best_idx]
 
@@ -726,7 +727,6 @@ if uploaded_file is not None:
                 f"Rekomendasi cluster (**{metode_rekomendasi}**) berada di posisi lain."
             )
 
-        # Grafik Evaluasi Gabungan
         st.subheader("📉 Grafik Evaluasi Gabungan (Train vs Test vs Forecast)")
         fig_eval, ax_eval = plt.subplots(figsize=(14, 6))
         ax_eval.plot(train.index, train.values, marker='o', linewidth=2, color='steelblue', label='Data Train')
@@ -746,7 +746,6 @@ if uploaded_file is not None:
         ax_eval.grid(True, linestyle='--', alpha=0.5)
         st.pyplot(fig_eval)
 
-        # Tabel Forecast ke Depan Semua Metode
         st.subheader("🔮 Forecast ke Depan — Semua Metode")
         st.info(
             f"Semua model di-retrain menggunakan seluruh **{len(data_produk)} bulan** data, "
@@ -769,7 +768,6 @@ if uploaded_file is not None:
             key='dl_semua'
         )
 
-        # Grafik forecast ke depan gabungan
         fig_fut_all, ax_fut_all = plt.subplots(figsize=(14, 6))
         ax_fut_all.plot(
             data_produk.index, data_produk.values,
@@ -793,10 +791,6 @@ if uploaded_file is not None:
         ax_fut_all.legend(loc='upper left')
         ax_fut_all.grid(True, linestyle='--', alpha=0.5)
         st.pyplot(fig_fut_all)
-
-        # ==========================================
-        # FORECAST METODE REKOMENDASI CLUSTER
-        # ==========================================
 
         if metode_rekomendasi in hasil_future:
             st.subheader(
