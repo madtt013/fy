@@ -2,6 +2,9 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
+from matplotlib.gridspec import GridSpec
+import matplotlib.colors as mcolors
 
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
@@ -22,31 +25,435 @@ from statsmodels.tsa.exponential_smoothing.ets import ETSModel
 st.set_page_config(
     page_title="Forecasting Barang",
     page_icon="📦",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
 # ==========================================
-# CUSTOM CSS
+# CUSTOM CSS — PREMIUM DARK THEME
 # ==========================================
 
 st.markdown("""
 <style>
-.main { background-color: #f5f7fa; }
-h1 { color: #1f4e79; text-align: center; font-weight: bold; }
-h2, h3 { color: #1f4e79; }
+/* ── IMPORT FONTS ── */
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Syne:wght@700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+/* ── ROOT VARIABLES ── */
+:root {
+    --bg-base:      #0d0f14;
+    --bg-card:      #13161e;
+    --bg-hover:     #1a1e2a;
+    --accent-blue:  #4f9eff;
+    --accent-cyan:  #00d4c8;
+    --accent-amber: #ffb547;
+    --accent-red:   #ff6b6b;
+    --accent-green: #4ade80;
+    --accent-purple:#a78bfa;
+    --text-primary: #e8eaf0;
+    --text-muted:   #8892a4;
+    --border:       rgba(255,255,255,0.07);
+    --glow-blue:    0 0 24px rgba(79,158,255,0.3);
+    --glow-cyan:    0 0 24px rgba(0,212,200,0.3);
+    --radius:       14px;
+    --radius-sm:    8px;
+}
+
+/* ── GLOBAL RESET ── */
+html, body, [class*="css"] {
+    font-family: 'Space Grotesk', sans-serif !important;
+    color: var(--text-primary) !important;
+}
+
+.main, .block-container {
+    background: var(--bg-base) !important;
+    padding: 2rem 2.5rem !important;
+    max-width: 1400px;
+}
+
+/* ── HERO HEADER ── */
+.hero-wrapper {
+    background: linear-gradient(135deg, #0d0f14 0%, #111827 50%, #0d0f14 100%);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 3rem 3.5rem;
+    margin-bottom: 2.5rem;
+    position: relative;
+    overflow: hidden;
+}
+.hero-wrapper::before {
+    content: '';
+    position: absolute;
+    top: -60px; right: -60px;
+    width: 280px; height: 280px;
+    background: radial-gradient(circle, rgba(79,158,255,0.12) 0%, transparent 70%);
+    pointer-events: none;
+}
+.hero-wrapper::after {
+    content: '';
+    position: absolute;
+    bottom: -80px; left: 40%;
+    width: 320px; height: 200px;
+    background: radial-gradient(circle, rgba(0,212,200,0.08) 0%, transparent 70%);
+    pointer-events: none;
+}
+.hero-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(79,158,255,0.12);
+    border: 1px solid rgba(79,158,255,0.3);
+    color: var(--accent-blue);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; font-weight: 500;
+    padding: 4px 12px;
+    border-radius: 20px;
+    letter-spacing: 0.08em;
+    margin-bottom: 1rem;
+}
+.hero-title {
+    font-family: 'Syne', sans-serif !important;
+    font-size: 3rem !important;
+    font-weight: 800 !important;
+    color: #ffffff !important;
+    line-height: 1.1 !important;
+    margin: 0 0 1rem 0 !important;
+    letter-spacing: -0.03em;
+}
+.hero-title span {
+    background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+.hero-subtitle {
+    color: var(--text-muted) !important;
+    font-size: 1.05rem !important;
+    line-height: 1.7 !important;
+    max-width: 600px;
+    margin: 0 !important;
+}
+.hero-pills {
+    display: flex; gap: 10px; flex-wrap: wrap;
+    margin-top: 1.8rem;
+}
+.hero-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    padding: 6px 14px;
+    border-radius: 20px;
+}
+.hero-pill .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+/* ── SECTION HEADERS ── */
+h1, h2, h3 {
+    font-family: 'Syne', sans-serif !important;
+    color: #ffffff !important;
+}
+.section-header {
+    display: flex; align-items: center; gap: 12px;
+    margin: 2.5rem 0 1.5rem 0;
+}
+.section-header .icon-box {
+    width: 38px; height: 38px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0;
+}
+.section-header h2 {
+    font-family: 'Syne', sans-serif !important;
+    font-size: 1.5rem !important;
+    font-weight: 700 !important;
+    color: #ffffff !important;
+    margin: 0 !important;
+}
+
+/* ── STAT CARDS ── */
+.stats-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin: 1.5rem 0;
+}
+.stat-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem 1.75rem;
+    position: relative; overflow: hidden;
+    transition: border-color 0.2s, transform 0.2s;
+}
+.stat-card:hover {
+    border-color: rgba(79,158,255,0.3);
+    transform: translateY(-2px);
+}
+.stat-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 2px;
+    border-radius: var(--radius) var(--radius) 0 0;
+}
+.stat-card.blue::before  { background: linear-gradient(90deg, var(--accent-blue), var(--accent-cyan)); }
+.stat-card.amber::before { background: linear-gradient(90deg, var(--accent-amber), #ff9f43); }
+.stat-card.green::before { background: linear-gradient(90deg, var(--accent-green), var(--accent-cyan)); }
+.stat-label {
+    font-size: 0.75rem; font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.1em;
+    margin-bottom: 0.5rem;
+}
+.stat-value {
+    font-family: 'Syne', sans-serif;
+    font-size: 2.2rem; font-weight: 800;
+    color: #ffffff; line-height: 1;
+    margin-bottom: 0.25rem;
+}
+.stat-sub {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+/* ── CLUSTER BADGE CARDS ── */
+.cluster-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem 1.5rem;
+    margin: 0.6rem 0;
+    display: flex; align-items: flex-start; gap: 14px;
+    transition: border-color 0.2s;
+}
+.cluster-card.fast  { border-left: 3px solid var(--accent-red); }
+.cluster-card.medium{ border-left: 3px solid var(--accent-amber); }
+.cluster-card.slow  { border-left: 3px solid var(--accent-green); }
+.cluster-card:hover { border-color: rgba(79,158,255,0.4); }
+.cluster-card .emo { font-size: 1.8rem; line-height: 1; }
+.cluster-card-body { flex: 1; }
+.cluster-card-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 0.95rem; font-weight: 700;
+    color: #ffffff; margin-bottom: 4px;
+}
+.cluster-card-method {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--accent-cyan);
+    background: rgba(0,212,200,0.08);
+    border: 1px solid rgba(0,212,200,0.2);
+    padding: 2px 8px; border-radius: 4px;
+    display: inline-block; margin-bottom: 6px;
+}
+.cluster-card-desc {
+    font-size: 0.82rem; color: var(--text-muted);
+    line-height: 1.55;
+}
+
+/* ── INFO / METRIC BLOCKS ── */
+.info-block {
+    background: rgba(79,158,255,0.06);
+    border: 1px solid rgba(79,158,255,0.2);
+    border-radius: var(--radius-sm);
+    padding: 0.9rem 1.2rem;
+    font-size: 0.88rem; color: var(--text-primary);
+    margin: 0.8rem 0;
+}
+.metric-row {
+    display: flex; gap: 16px; margin: 1rem 0;
+}
+.metric-box {
+    flex: 1;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 1.1rem 1.4rem;
+    text-align: center;
+}
+.metric-box-label {
+    font-size: 0.72rem; font-weight: 500;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--text-muted); margin-bottom: 6px;
+}
+.metric-box-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.8rem; font-weight: 500;
+    color: var(--accent-cyan);
+}
+
+/* ── DATAFRAME ── */
+[data-testid="stDataFrame"] {
+    background: var(--bg-card) !important;
+    border-radius: var(--radius) !important;
+    border: 1px solid var(--border) !important;
+    overflow: hidden;
+}
+
+/* ── FILE UPLOADER ── */
+[data-testid="stFileUploader"] {
+    background: var(--bg-card) !important;
+    border: 2px dashed rgba(79,158,255,0.3) !important;
+    border-radius: var(--radius) !important;
+    padding: 1rem !important;
+}
+[data-testid="stFileUploader"]:hover {
+    border-color: rgba(79,158,255,0.6) !important;
+}
+
+/* ── SELECTBOX & SLIDER ── */
+[data-testid="stSelectbox"] > div,
+[data-testid="stSlider"] > div {
+    background: transparent !important;
+}
+.stSelectbox label, .stSlider label, .stFileUploader label {
+    color: var(--text-muted) !important;
+    font-size: 0.82rem !important;
+    font-weight: 500 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.08em !important;
+}
+
+/* ── BUTTONS ── */
 .stButton>button {
-    background-color: #1f77b4; color: white;
-    border-radius: 10px; border: none;
-    padding: 10px 20px; font-weight: bold;
+    background: linear-gradient(135deg, var(--accent-blue), #3b82f6) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: var(--radius-sm) !important;
+    padding: 10px 24px !important;
+    font-family: 'Space Grotesk', sans-serif !important;
+    font-weight: 600 !important;
+    font-size: 0.88rem !important;
+    letter-spacing: 0.02em !important;
+    transition: opacity 0.2s, transform 0.1s !important;
+    box-shadow: var(--glow-blue) !important;
+}
+.stButton>button:hover {
+    opacity: 0.9 !important;
+    transform: translateY(-1px) !important;
 }
 .stDownloadButton>button {
-    background-color: #28a745; color: white;
-    border-radius: 10px; border: none;
-    padding: 10px 20px; font-weight: bold;
+    background: linear-gradient(135deg, #16a34a, #15803d) !important;
+    color: white !important;
+    border: none !important;
+    border-radius: var(--radius-sm) !important;
+    padding: 10px 24px !important;
+    font-family: 'Space Grotesk', sans-serif !important;
+    font-weight: 600 !important;
+    font-size: 0.88rem !important;
+    box-shadow: 0 0 18px rgba(74,222,128,0.25) !important;
 }
-[data-testid="stMetricValue"] { color: #1f77b4; font-size: 28px; }
+
+/* ── EXPANDER ── */
+[data-testid="stExpander"] {
+    background: var(--bg-card) !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius) !important;
+}
+[data-testid="stExpander"] summary {
+    color: var(--text-primary) !important;
+    font-weight: 500 !important;
+}
+
+/* ── SUCCESS / WARNING / ERROR ── */
+[data-testid="stAlert"] {
+    border-radius: var(--radius-sm) !important;
+    border: none !important;
+}
+div[data-baseweb="notification"] {
+    border-radius: var(--radius-sm) !important;
+}
+
+/* ── METRIC WIDGET ── */
+[data-testid="stMetric"] {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 1rem 1.25rem !important;
+}
+[data-testid="stMetricValue"] {
+    color: var(--accent-blue) !important;
+    font-family: 'JetBrains Mono', monospace !important;
+    font-size: 2rem !important;
+}
+[data-testid="stMetricLabel"] {
+    color: var(--text-muted) !important;
+    font-size: 0.75rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.08em !important;
+}
+
+/* ── DIVIDER ── */
+hr { border-color: var(--border) !important; }
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
 </style>
 """, unsafe_allow_html=True)
+
+# ==========================================
+# MATPLOTLIB DARK THEME
+# ==========================================
+
+def apply_chart_style():
+    plt.rcParams.update({
+        'figure.facecolor':  '#13161e',
+        'axes.facecolor':    '#13161e',
+        'axes.edgecolor':    '#2a2f3e',
+        'axes.labelcolor':   '#8892a4',
+        'axes.titlecolor':   '#e8eaf0',
+        'axes.titlesize':    13,
+        'axes.titleweight':  'bold',
+        'axes.labelsize':    11,
+        'axes.grid':         True,
+        'axes.spines.top':   False,
+        'axes.spines.right': False,
+        'grid.color':        '#1e2435',
+        'grid.linestyle':    '--',
+        'grid.linewidth':    0.7,
+        'xtick.color':       '#8892a4',
+        'ytick.color':       '#8892a4',
+        'xtick.labelsize':   9,
+        'ytick.labelsize':   9,
+        'legend.facecolor':  '#1a1e2a',
+        'legend.edgecolor':  '#2a2f3e',
+        'legend.labelcolor': '#e8eaf0',
+        'legend.fontsize':   9,
+        'text.color':        '#e8eaf0',
+        'font.family':       'monospace',
+        'lines.linewidth':   2,
+        'lines.markersize':  6,
+    })
+
+apply_chart_style()
+
+# ==========================================
+# COLOUR PALETTE
+# ==========================================
+
+C = {
+    'train':     '#4f9eff',
+    'test':      '#ffb547',
+    'hw_add':    '#4ade80',
+    'hw_mul':    '#ff6b6b',
+    'ets':       '#a78bfa',
+    'arima':     '#f97316',
+    'croston':   '#00d4c8',
+    'vline':     '#e8eaf0',
+}
+
+warna_metode = {
+    'HW Additive':       C['hw_add'],
+    'HW Multiplicative': C['hw_mul'],
+    'ETS':               C['ets'],
+    'ARIMA':             C['arima'],
+    'Croston':           C['croston'],
+}
 
 # ==========================================
 # CLUSTER-METHOD MAPPING
@@ -54,89 +461,104 @@ h2, h3 { color: #1f4e79; }
 
 CLUSTER_METHOD_MAP = {
     'Fast Moving': {
-        'method':      'HW Multiplicative',
-        'label':       'Holt-Winters Multiplicative',
-        'icon':        '🔴',
+        'method':  'HW Multiplicative',
+        'label':   'Holt-Winters Multiplicative',
+        'icon':    '🔴',
+        'color':   C['hw_mul'],
+        'css':     'fast',
         'rationale': (
-            "**Holt-Winters Multiplicative** dipilih karena produk fast moving "
-            "memiliki volume permintaan tinggi dengan variasi musiman yang "
-            "*proporsional* terhadap level permintaan (seasonal swing membesar "
-            "saat volume naik). Model multiplicative menangkap pola ini lebih "
-            "akurat dibanding model additive."
+            "Produk fast moving memiliki volume permintaan tinggi dengan variasi musiman "
+            "yang *proporsional* terhadap level permintaan. Seasonal swing membesar saat "
+            "volume naik — pola ini hanya dapat ditangkap oleh model multiplicative."
         )
     },
     'Medium Moving': {
-        'method':      'ETS',
-        'label':       'ETS (Additive-Additive-Additive)',
-        'icon':        '🟡',
+        'method':  'ETS',
+        'label':   'ETS (Additive-Additive-Additive)',
+        'icon':    '🟡',
+        'color':   C['ets'],
+        'css':     'medium',
         'rationale': (
-            "**ETS (A,A,A)** dipilih karena secara struktur identik dengan "
-            "Holt-Winters Additive, namun semua parameter dioptimasi secara "
-            "otomatis lewat *Maximum Likelihood Estimation*. Hasilnya lebih "
-            "presisi untuk produk medium moving dengan pola tren dan musiman "
-            "yang sedang, sekaligus lebih tahan overfitting pada data 24 bulan."
+            "Secara struktur identik dengan Holt-Winters Additive, namun semua parameter "
+            "dioptimasi otomatis via Maximum Likelihood Estimation — lebih presisi dan "
+            "tahan overfitting untuk pola tren & musiman sedang pada data 24 bulan."
         )
     },
     'Slow Moving': {
-        'method':      'Croston',
-        'label':       "Croston's Method",
-        'icon':        '🟢',
+        'method':  'Croston',
+        'label':   "Croston's Method",
+        'icon':    '🟢',
+        'color':   C['croston'],
+        'css':     'slow',
         'rationale': (
-            "**Croston's Method** dipilih karena dirancang khusus untuk "
-            "*intermittent demand* — permintaan sporadis dengan banyak nilai nol. "
-            "Cara kerjanya memisahkan **ukuran demand** dan **interval antar demand** "
-            "lalu menerapkan exponential smoothing pada keduanya secara terpisah. "
-            "ARIMA tidak cocok untuk data banyak nol karena bisa menghasilkan "
-            "forecast negatif atau tidak stabil."
+            "Dirancang khusus untuk intermittent demand — permintaan sporadis dengan "
+            "banyak nilai nol. Memisahkan ukuran demand dan interval antar demand, lalu "
+            "menerapkan exponential smoothing pada keduanya secara terpisah."
         )
     }
 }
 
 # ==========================================
-# JUDUL
+# HERO SECTION
 # ==========================================
-
-st.title("📦 Clustering dan Forecasting Permintaan Barang")
 
 st.markdown("""
-### Sistem Analisis Barang Keluar
-Aplikasi ini digunakan untuk:
-- Clustering produk menggunakan K-Means
-- Forecasting permintaan barang **berdasarkan metode yang sesuai per cluster**
-- Perbandingan hasil forecast vs data aktual
-""")
+<div class="hero-wrapper">
+  <div class="hero-badge">⬡ v2.0 &nbsp;·&nbsp; INVENTORY INTELLIGENCE</div>
+  <h1 class="hero-title">Clustering &<br><span>Demand Forecasting</span></h1>
+  <p class="hero-subtitle">
+    Platform analisis permintaan barang berbasis machine learning — dari segmentasi produk
+    otomatis hingga proyeksi ke depan dengan metode terbaik per cluster.
+  </p>
+  <div class="hero-pills">
+    <span class="hero-pill"><span class="dot" style="background:#4f9eff"></span> K-Means Clustering</span>
+    <span class="hero-pill"><span class="dot" style="background:#ff6b6b"></span> Holt-Winters</span>
+    <span class="hero-pill"><span class="dot" style="background:#a78bfa"></span> ETS Model</span>
+    <span class="hero-pill"><span class="dot" style="background:#00d4c8"></span> Croston's Method</span>
+    <span class="hero-pill"><span class="dot" style="background:#f97316"></span> ARIMA</span>
+  </div>
+</div>
+""", unsafe_allow_html=True)
 
 # ==========================================
-# METODE PER CLUSTER — INFO BOX
+# PANDUAN METODE
 # ==========================================
 
-with st.expander("ℹ️ Panduan: Metode Forecasting per Cluster", expanded=False):
+with st.expander("📖  Panduan Metode Forecasting per Cluster", expanded=False):
+    for kat, info in CLUSTER_METHOD_MAP.items():
+        st.markdown(f"""
+<div class="cluster-card {info['css']}">
+  <div class="emo">{info['icon']}</div>
+  <div class="cluster-card-body">
+    <div class="cluster-card-title">{kat}</div>
+    <span class="cluster-card-method">{info['label']}</span>
+    <div class="cluster-card-desc">{info['rationale']}</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
     st.markdown("""
-    | Cluster | Metode Forecasting | Alasan Pemilihan |
-    |---|---|---|
-    | 🔴 Fast Moving | **Holt-Winters Multiplicative** | Volume tinggi, seasonal swing *proporsional* dengan level permintaan |
-    | 🟡 Medium Moving | **ETS (A,A,A)** | Struktur seperti HW Additive namun parameter dioptimasi otomatis (MLE), lebih akurat & tahan overfitting |
-    | 🟢 Slow Moving | **Croston's Method** | Dirancang khusus untuk data *intermittent* (banyak nol), memisahkan ukuran & interval demand |
-
-    Metode ini dipilih secara otomatis sesuai cluster produk yang Anda pilih.
-    Anda tetap dapat mengganti metode secara manual jika diperlukan.
-
-    **Catatan Croston's Method:**
-    Menghasilkan forecast *flat* (konstan) — ini normal dan merupakan karakteristik metode ini.
-    Nilai forecast = rata-rata ukuran demand ÷ rata-rata interval demand.
-    Parameter **alpha** mengontrol seberapa cepat model beradaptasi (nilai kecil = lebih stabil, nilai besar = lebih responsif).
-    
-    **Catatan Data 2 Tahun (24 Bulan):**
-    Dengan data 24 bulan, seasonality yang digunakan adalah **6 bulan** (semi-tahunan),
-    karena model memerlukan minimal 2 siklus penuh. Seasonal period 12 bulan baru aktif
-    jika data training ≥ 24 bulan.
-    """)
+<div class="info-block">
+  📌 <strong>Catatan Data 2 Tahun (24 Bulan):</strong><br>
+  Seasonal period yang digunakan adalah <strong>6 bulan</strong> (semi-tahunan)
+  karena model memerlukan minimal 2 siklus penuh. Period 12 bulan baru aktif jika
+  data training ≥ 24 bulan. Untuk Croston: forecast <em>flat</em> adalah normal —
+  nilai = rata-rata ukuran demand ÷ rata-rata interval demand.
+</div>
+""", unsafe_allow_html=True)
 
 # ==========================================
 # UPLOAD FILE
 # ==========================================
 
-uploaded_file = st.file_uploader("Upload File Excel", type=["xlsx"])
+st.markdown("""
+<div class="section-header">
+  <div class="icon-box">📂</div>
+  <h2>Upload Data</h2>
+</div>
+""", unsafe_allow_html=True)
+
+uploaded_file = st.file_uploader("Upload File Excel (.xlsx)", type=["xlsx"])
 
 # ==========================================
 # JIKA FILE SUDAH DIUPLOAD
@@ -145,36 +567,43 @@ uploaded_file = st.file_uploader("Upload File Excel", type=["xlsx"])
 if uploaded_file is not None:
 
     df = pd.read_excel(uploaded_file)
-
-    # ==========================================
-    # [FIX 1] PEMBERSIHAN DATA
-    # Data mentah memiliki NaN pada kolom keluar
-    # (~25% baris) dan id_produk (beberapa baris).
-    # Baris tersebut dibuang agar tidak mempengaruhi
-    # pivot table dan metric dashboard.
-    # ==========================================
     df = df.dropna(subset=['id_produk', 'keluar'])
     df['keluar'] = df['keluar'].astype(int)
 
-    st.subheader("📄 Data Awal")
-    st.dataframe(df.head())
+    # ── DASHBOARD KPI ──
+    st.markdown("""
+<div class="section-header">
+  <div class="icon-box">📊</div>
+  <h2>Overview Data</h2>
+</div>
+""", unsafe_allow_html=True)
 
-    # DASHBOARD
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("Jumlah Data", len(df))
-    with col2:
-        st.metric("Jumlah Produk", df['id_produk'].nunique())
-    with col3:
-        st.metric("Total Barang Keluar", int(df['keluar'].sum()))
+    st.markdown(f"""
+<div class="stats-row">
+  <div class="stat-card blue">
+    <div class="stat-label">Total Data</div>
+    <div class="stat-value">{len(df):,}</div>
+    <div class="stat-sub">baris transaksi</div>
+  </div>
+  <div class="stat-card amber">
+    <div class="stat-label">Jumlah Produk</div>
+    <div class="stat-value">{df['id_produk'].nunique():,}</div>
+    <div class="stat-sub">SKU unik</div>
+  </div>
+  <div class="stat-card green">
+    <div class="stat-label">Total Keluar</div>
+    <div class="stat-value">{int(df['keluar'].sum()):,}</div>
+    <div class="stat-sub">unit barang</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    with st.expander("🗂  Lihat Data Awal (5 baris pertama)"):
+        st.dataframe(df.head(), use_container_width=True)
 
     # FORMAT TANGGAL & BULAN
     df['tgl_input'] = pd.to_datetime(df['tgl_input'])
     df['Bulan'] = df['tgl_input'].dt.strftime('%b-%y')
-
-    # ==========================================
-    # DETEKSI OTOMATIS RENTANG BULAN DARI DATA
-    # ==========================================
 
     all_months_sorted = sorted(
         df['Bulan'].unique(),
@@ -189,29 +618,31 @@ if uploaded_file is not None:
         aggfunc='sum',
         fill_value=0
     )
-
     pivot_table = pivot_table.reindex(columns=all_months_sorted, fill_value=0)
 
-    # Simpan informasi periode untuk label forecast
-    first_month = pd.to_datetime(all_months_sorted[0],  format='%b-%y')
+    first_month  = pd.to_datetime(all_months_sorted[0], format='%b-%y')
     total_months = len(all_months_sorted)
 
-    st.subheader("📊 Pivot Table Barang Keluar")
-    st.dataframe(pivot_table)
-
-    csv_data = pivot_table.to_csv().encode('utf-8')
-    st.download_button(
-        label="⬇️ Download Pivot Table",
-        data=csv_data,
-        file_name='data_barang_keluar.csv',
-        mime='text/csv'
-    )
+    with st.expander(f"📋  Pivot Table Barang Keluar ({total_months} bulan × {len(pivot_table)} produk)"):
+        st.dataframe(pivot_table, use_container_width=True)
+        csv_data = pivot_table.to_csv().encode('utf-8')
+        st.download_button(
+            label="⬇️  Download Pivot Table",
+            data=csv_data,
+            file_name='pivot_barang_keluar.csv',
+            mime='text/csv'
+        )
 
     # ==========================================
     # CLUSTERING
     # ==========================================
 
-    st.header("📌 Clustering Produk")
+    st.markdown("""
+<div class="section-header">
+  <div class="icon-box">🎯</div>
+  <h2>Clustering Produk</h2>
+</div>
+""", unsafe_allow_html=True)
 
     pivot_table['Total'] = pivot_table.sum(axis=1)
     filtered_data = pivot_table[pivot_table['Total'] > 1].copy()
@@ -227,21 +658,29 @@ if uploaded_file is not None:
         km.fit(scaled_data)
         inertia.append(km.inertia_)
 
-    fig1, ax1 = plt.subplots(figsize=(8, 5))
-    ax1.plot(K, inertia, marker='o')
-    ax1.set_title('Metode Elbow')
-    ax1.set_xlabel('Jumlah Cluster')
-    ax1.set_ylabel('Inertia')
-    ax1.grid(True, linestyle='--', alpha=0.5)
-    st.pyplot(fig1)
+    fig_elbow, ax_elbow = plt.subplots(figsize=(9, 4.5))
+    ax_elbow.plot(list(K), inertia, marker='o', color=C['train'],
+                  linewidth=2.5, markersize=8,
+                  markerfacecolor='#13161e', markeredgewidth=2.5)
+    ax_elbow.fill_between(list(K), inertia, alpha=0.06, color=C['train'])
+    for k_val, in_val in zip(K, inertia):
+        ax_elbow.annotate(f'{in_val:.0f}',
+            xy=(k_val, in_val), xytext=(0, 10),
+            textcoords='offset points',
+            ha='center', fontsize=8, color='#8892a4')
+    ax_elbow.set_title('Elbow Method — Penentuan Jumlah Cluster Optimal', pad=14)
+    ax_elbow.set_xlabel('Jumlah Cluster (k)')
+    ax_elbow.set_ylabel('Inertia')
+    st.pyplot(fig_elbow)
+    plt.close()
 
     jumlah_cluster = st.slider("Pilih Jumlah Cluster", min_value=2, max_value=10, value=3)
 
     kmeans = KMeans(n_clusters=jumlah_cluster, random_state=42)
     cluster = kmeans.fit_predict(scaled_data)
+    filtered_data = filtered_data.copy()
     filtered_data['Cluster'] = cluster
 
-    # FAST - MEDIUM - SLOW berdasarkan rata-rata Total
     cluster_avg = filtered_data.groupby('Cluster')['Total'].mean().sort_values(ascending=False)
     mapping_cluster = {}
     if len(cluster_avg) >= 3:
@@ -259,123 +698,159 @@ if uploaded_file is not None:
     ).fillna(0).astype(int)
 
     tabel_cluster = pd.DataFrame({
-        'Kategori':      cluster_count.index,
-        'Jumlah Produk': cluster_count.values,
-        'Metode Forecast': [
-            CLUSTER_METHOD_MAP[k]['label'] for k in cluster_count.index
-        ]
+        'Kategori':           cluster_count.index,
+        'Jumlah Produk':      cluster_count.values,
+        'Metode Forecast':    [CLUSTER_METHOD_MAP[k]['label'] for k in cluster_count.index]
     })
     tabel_cluster.index = range(1, len(tabel_cluster) + 1)
 
-    st.subheader("📊 Jumlah Produk per Cluster & Metode Forecasting")
-    st.dataframe(tabel_cluster, use_container_width=True)
+    # Cluster summary cards
+    cols_c = st.columns(3)
+    cat_colors_css = {'Fast Moving': C['hw_mul'], 'Medium Moving': C['ets'], 'Slow Moving': C['croston']}
+    for i, (kat, cnt) in enumerate(cluster_count.items()):
+        with cols_c[i]:
+            info = CLUSTER_METHOD_MAP[kat]
+            color = cat_colors_css[kat]
+            st.markdown(f"""
+<div style="background:#13161e;border:1px solid rgba(255,255,255,0.07);
+            border-top:3px solid {color};border-radius:12px;
+            padding:1.25rem 1.5rem;text-align:center;">
+  <div style="font-size:2rem;margin-bottom:6px">{info['icon']}</div>
+  <div style="font-family:'Syne',sans-serif;font-size:1.1rem;font-weight:700;
+              color:#fff;margin-bottom:4px">{kat}</div>
+  <div style="font-family:'JetBrains Mono',monospace;font-size:2.4rem;
+              font-weight:500;color:{color};line-height:1">{cnt}</div>
+  <div style="font-size:0.72rem;color:#8892a4;margin-top:4px">produk</div>
+  <div style="font-family:'JetBrains Mono',monospace;font-size:0.7rem;
+              color:#8892a4;background:rgba(255,255,255,0.04);
+              border-radius:4px;padding:4px 8px;margin-top:8px;
+              display:inline-block">{info['label']}</div>
+</div>
+""", unsafe_allow_html=True)
 
-    for kat, info in CLUSTER_METHOD_MAP.items():
-        if kat in cluster_count.index:
-            st.info(f"{info['icon']} **{kat}** → {info['label']}\n\n{info['rationale']}")
-
-    fig_cluster, ax_cluster = plt.subplots(figsize=(8, 5))
-    colors = ['#e74c3c', '#f39c12', '#27ae60']
-    bars = ax_cluster.bar(
-        tabel_cluster['Kategori'],
-        tabel_cluster['Jumlah Produk'],
-        color=colors[:len(tabel_cluster)]
+    # Bar chart distribusi cluster
+    fig_cl, ax_cl = plt.subplots(figsize=(9, 4.5))
+    bar_colors_cl = [cat_colors_css.get(k, '#888') for k in tabel_cluster['Kategori']]
+    bars_cl = ax_cl.bar(
+        tabel_cluster['Kategori'], tabel_cluster['Jumlah Produk'],
+        color=bar_colors_cl, width=0.5,
+        edgecolor='#1e2435', linewidth=1.5
     )
-    for bar, val in zip(bars, tabel_cluster['Jumlah Produk']):
-        ax_cluster.text(
+    for bar, val in zip(bars_cl, tabel_cluster['Jumlah Produk']):
+        ax_cl.text(
             bar.get_x() + bar.get_width() / 2,
-            bar.get_height() + 1,
-            str(val), ha='center', va='bottom', fontweight='bold'
+            bar.get_height() + 0.5,
+            str(val), ha='center', va='bottom',
+            fontweight='bold', fontsize=13, color='#e8eaf0'
         )
-    ax_cluster.set_title('Distribusi Produk per Cluster')
-    ax_cluster.set_xlabel('Kategori Cluster')
-    ax_cluster.set_ylabel('Jumlah Produk')
-    ax_cluster.grid(True, linestyle='--', alpha=0.5)
-    st.pyplot(fig_cluster)
+    ax_cl.set_title('Distribusi Produk per Cluster')
+    ax_cl.set_xlabel('Kategori')
+    ax_cl.set_ylabel('Jumlah Produk')
+    ax_cl.set_ylim(0, tabel_cluster['Jumlah Produk'].max() * 1.25)
+    st.pyplot(fig_cl)
+    plt.close()
 
-    pilih_cluster = st.selectbox(
-        "Pilih Cluster",
-        ['Fast Moving', 'Medium Moving', 'Slow Moving']
-    )
+    # ==========================================
+    # PILIH CLUSTER & PRODUK
+    # ==========================================
+
+    st.markdown("""
+<div class="section-header">
+  <div class="icon-box">🔍</div>
+  <h2>Pilih Cluster & Produk</h2>
+</div>
+""", unsafe_allow_html=True)
+
+    pilih_cluster = st.selectbox("Pilih Cluster", ['Fast Moving', 'Medium Moving', 'Slow Moving'])
 
     produk_cluster = filtered_data[
         filtered_data['Kategori'] == pilih_cluster
     ].index.tolist()
 
-    st.subheader(f"📦 Produk dalam {pilih_cluster}")
-    df_produk_cluster = pd.DataFrame({'Produk': produk_cluster})
-    df_produk_cluster.index = range(1, len(df_produk_cluster) + 1)
-    st.dataframe(df_produk_cluster, use_container_width=True)
+    info_cluster = CLUSTER_METHOD_MAP[pilih_cluster]
+    color_cluster = cat_colors_css[pilih_cluster]
+
+    st.markdown(f"""
+<div class="cluster-card {info_cluster['css']}" style="margin:0.8rem 0 1.2rem 0">
+  <div class="emo">{info_cluster['icon']}</div>
+  <div class="cluster-card-body">
+    <div class="cluster-card-title">{pilih_cluster} — {len(produk_cluster)} produk</div>
+    <span class="cluster-card-method">{info_cluster['label']}</span>
+    <div class="cluster-card-desc">{info_cluster['rationale']}</div>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+
+    with st.expander(f"📦  Daftar Produk — {pilih_cluster} ({len(produk_cluster)} produk)"):
+        df_produk = pd.DataFrame({'Produk': produk_cluster})
+        df_produk.index = range(1, len(df_produk) + 1)
+        st.dataframe(df_produk, use_container_width=True)
 
     # ==========================================
     # FORECASTING
     # ==========================================
 
-    st.header("📈 Forecasting Barang")
+    st.markdown("""
+<div class="section-header">
+  <div class="icon-box">📈</div>
+  <h2>Forecasting Permintaan</h2>
+</div>
+""", unsafe_allow_html=True)
 
     produk = st.selectbox("Pilih Produk", produk_cluster)
 
     data_produk = filtered_data.loc[produk].copy()
     data_produk = data_produk.drop(['Cluster', 'Kategori', 'Total'])
     data_produk = pd.to_numeric(data_produk)
-
     data_produk.index = pd.date_range(
-        start=first_month,
-        periods=len(data_produk),
-        freq='ME'
+        start=first_month, periods=len(data_produk), freq='ME'
     )
 
     jumlah_bulan_aktif = (data_produk > 0).sum()
     if jumlah_bulan_aktif < 6:
-        st.warning(
-            "⚠️ Produk ini hanya aktif kurang dari 6 bulan sehingga "
-            "hasil forecasting kurang reliabel."
-        )
+        st.warning("⚠️ Produk ini hanya aktif kurang dari 6 bulan — hasil forecasting kurang reliabel.")
 
-    # ==========================================
-    # AUTO-SELECT METODE BERDASARKAN CLUSTER
-    # ==========================================
-
+    # AUTO-SELECT METODE
     metode_rekomendasi = CLUSTER_METHOD_MAP[pilih_cluster]['method']
     label_rekomendasi  = CLUSTER_METHOD_MAP[pilih_cluster]['label']
     icon_cluster       = CLUSTER_METHOD_MAP[pilih_cluster]['icon']
 
-    st.success(
-        f"{icon_cluster} Produk ini termasuk **{pilih_cluster}** → "
-        f"Metode rekomendasi: **{label_rekomendasi}**"
-    )
+    st.markdown(f"""
+<div style="background:rgba(79,158,255,0.06);border:1px solid rgba(79,158,255,0.25);
+            border-radius:8px;padding:0.8rem 1.2rem;margin:0.5rem 0 1rem 0;
+            font-size:0.9rem;">
+  {icon_cluster} &nbsp;Produk <strong style="color:#fff">{produk}</strong> termasuk
+  <strong style="color:{color_cluster}">{pilih_cluster}</strong>
+  &nbsp;→&nbsp; Metode rekomendasi:
+  <code style="background:rgba(79,158,255,0.15);padding:2px 8px;border-radius:4px;
+               color:#4f9eff">{label_rekomendasi}</code>
+</div>
+""", unsafe_allow_html=True)
 
     daftar_metode = [
-        "HW Additive",
-        "HW Multiplicative",
-        "ETS",
-        "ARIMA",
-        "Croston",
-        "Perbandingan Semua Metode"
+        "HW Additive", "HW Multiplicative", "ETS",
+        "ARIMA", "Croston", "Perbandingan Semua Metode"
     ]
     default_idx = daftar_metode.index(metode_rekomendasi)
 
-    metode = st.selectbox(
-        "Metode Forecasting (otomatis dipilih sesuai cluster, bisa diubah manual)",
-        daftar_metode,
-        index=default_idx
-    )
-
-    jumlah_forecast = st.slider("Jumlah Forecast Bulan", 1, 12, 6)
+    col_sel1, col_sel2 = st.columns([2, 1])
+    with col_sel1:
+        metode = st.selectbox(
+            "Metode Forecasting (otomatis → bisa diganti manual)",
+            daftar_metode, index=default_idx
+        )
+    with col_sel2:
+        jumlah_forecast = st.slider("Jumlah Forecast (bulan)", 1, 12, 6)
 
     croston_alpha = 0.1
-    if metode == 'Croston' or metode == 'Perbandingan Semua Metode':
+    if metode in ('Croston', 'Perbandingan Semua Metode'):
         croston_alpha = st.slider(
-            "Alpha Croston (smoothing parameter) — semakin kecil = lebih stabil",
+            "Alpha Croston (smoothing parameter)",
             min_value=0.05, max_value=0.50, value=0.10, step=0.05,
-            help="Alpha mengontrol seberapa cepat Croston's Method beradaptasi terhadap perubahan demand. "
-                 "Nilai 0.1–0.2 direkomendasikan untuk slow moving items."
+            help="Nilai kecil = stabil; nilai besar = responsif. Rekomendasi 0.10–0.20."
         )
 
-    # ==========================================
     # TRAIN-TEST SPLIT
-    # ==========================================
-
     n = len(data_produk)
     train = data_produk.iloc[:n - jumlah_forecast]
     test  = data_produk.iloc[n - jumlah_forecast:]
@@ -383,272 +858,225 @@ if uploaded_file is not None:
     if len(train) < 6:
         st.error(
             f"Data train hanya {len(train)} bulan. "
-            "Kurangi jumlah forecast agar data train minimal 6 bulan."
+            "Kurangi jumlah forecast agar minimal 6 bulan."
         )
         st.stop()
 
-    st.info(
-        f"📌 Train: **{len(train)} bulan**  |  Test: **{len(test)} bulan**  |  "
-        "MAE & RMSE dihitung dari forecast vs data test."
-    )
+    st.markdown(f"""
+<div class="info-block">
+  📌 Split data &nbsp;·&nbsp;
+  <strong style="color:#4f9eff">Train: {len(train)} bulan</strong>
+  &nbsp;/&nbsp;
+  <strong style="color:#ffb547">Test: {len(test)} bulan</strong>
+  &nbsp;·&nbsp; MAE & RMSE dihitung dari forecast vs data test.
+</div>
+""", unsafe_allow_html=True)
 
     # ==========================================
-    # [FIX 2] SEASONAL PERIODS OTOMATIS
-    #
-    # PERUBAHAN dari kode sebelumnya:
-    #   Lama: n_train >= 25 → sp=12, n_train >= 13 → sp=6
-    #   Baru: n_train >= 24 → sp=12, n_train >= 12 → sp=6
-    #
-    # Alasan:
-    # - sp=12 membutuhkan minimal 2×12=24 titik data train.
-    #   Threshold 25 tidak akan pernah tercapai dengan data
-    #   24 bulan (train maksimal = 23 saat forecast=1).
-    #   Threshold 24 lebih tepat secara statistik.
-    #
-    # - sp=6 membutuhkan minimal 2×6=12 titik data train.
-    #   Threshold lama (13) menyebabkan bug: ketika
-    #   forecast=12, n_train=12 → sp=1 (tanpa seasonality!).
-    #   Threshold baru (12) memperbaiki ini.
+    # SEASONAL PERIODS
     # ==========================================
 
     def get_sp(n_train):
-        if n_train >= 24:   # sp=12: butuh minimal 2×12=24 data  [DIUBAH dari 25]
-            return 12
-        elif n_train >= 12: # sp=6 : butuh minimal 2×6 =12 data  [DIUBAH dari 13]
-            return 6
-        else:
-            return 1        # data terlalu sedikit → tanpa seasonality
+        if n_train >= 24: return 12
+        elif n_train >= 12: return 6
+        else: return 1
 
     # ==========================================
     # GRAFIK DATA AKTUAL
     # ==========================================
 
-    fig2, ax2 = plt.subplots(figsize=(12, 5))
-    ax2.plot(
-        data_produk.index, data_produk.values,
-        marker='o', linewidth=2, label='Data Aktual'
-    )
-    ax2.axvline(
-        x=test.index[0], color='red', linestyle='--',
-        alpha=0.7, label='Awal Periode Test'
-    )
-    ax2.set_title(f'Data Aktual Produk {produk}')
-    ax2.legend()
-    ax2.grid(True, linestyle='--', alpha=0.5)
-    st.pyplot(fig2)
+    fig_act, ax_act = plt.subplots(figsize=(13, 4.5))
+    ax_act.fill_between(data_produk.index, data_produk.values,
+                        alpha=0.12, color=C['train'])
+    ax_act.plot(data_produk.index, data_produk.values,
+                marker='o', linewidth=2.5, color=C['train'],
+                markerfacecolor='#13161e', markeredgewidth=2.5,
+                label='Data Aktual')
+    ax_act.axvline(x=test.index[0], color='#ff6b6b',
+                   linestyle='--', alpha=0.7, linewidth=1.5,
+                   label='Awal Periode Test')
+    ax_act.set_title(f'Data Aktual — Produk {produk}', pad=14)
+    ax_act.legend()
+    st.pyplot(fig_act)
+    plt.close()
 
     # ==========================================
-    # WARNA PER METODE
-    # ==========================================
-
-    warna_metode = {
-        'HW Additive':       'green',
-        'HW Multiplicative': 'red',
-        'ETS':               'purple',
-        'ARIMA':             'brown',
-        'Croston':           'teal'
-    }
-
-    # ==========================================
-    # HELPER: CROSTON'S METHOD
+    # HELPER FUNCTIONS
     # ==========================================
 
     def croston_forecast(series, steps, alpha=0.1):
         data = series.values.astype(float)
-        n    = len(data)
-
         non_zero = np.where(data > 0)[0]
-
         if len(non_zero) == 0:
             idx = pd.date_range(series.index[-1], periods=steps + 1, freq='ME')[1:]
             return pd.Series(np.zeros(steps), index=idx)
-
         z = float(data[non_zero[0]])
         p = float(non_zero[0] + 1)
         q = 1
-
-        for i in range(non_zero[0] + 1, n):
+        for i in range(non_zero[0] + 1, len(data)):
             if data[i] > 0:
                 z = alpha * data[i] + (1 - alpha) * z
                 p = alpha * q       + (1 - alpha) * p
                 q = 1
             else:
                 q += 1
-
         rate = max(0.0, z / p)
-
         idx = pd.date_range(series.index[-1], periods=steps + 1, freq='ME')[1:]
         return pd.Series(np.full(steps, round(rate, 4)), index=idx)
 
-    # ==========================================
-    # HELPER: FIT MODEL (TRAIN)
-    # ==========================================
-
-    def fit_model(nama_metode, train_data, croston_alpha=0.1):
+    def fit_model(nama, train_data, c_alpha=0.1):
         sp = get_sp(len(train_data))
-        if nama_metode == 'HW Additive':
+        if nama == 'HW Additive':
             if sp > 1:
                 return ExponentialSmoothing(
-                    train_data, trend='add', seasonal='add', seasonal_periods=sp
-                ).fit()
-            else:
-                return ExponentialSmoothing(train_data, trend='add').fit()
-        elif nama_metode == 'HW Multiplicative':
-            train_nz = train_data.copy()
-            train_nz[train_nz <= 0] = 1
+                    train_data, trend='add', seasonal='add', seasonal_periods=sp).fit()
+            return ExponentialSmoothing(train_data, trend='add').fit()
+        elif nama == 'HW Multiplicative':
+            td = train_data.copy(); td[td <= 0] = 1
             if sp > 1:
                 return ExponentialSmoothing(
-                    train_nz, trend='add', seasonal='mul', seasonal_periods=sp
-                ).fit()
-            else:
-                return ExponentialSmoothing(train_nz, trend='add').fit()
-        elif nama_metode == 'ETS':
+                    td, trend='add', seasonal='mul', seasonal_periods=sp).fit()
+            return ExponentialSmoothing(td, trend='add').fit()
+        elif nama == 'ETS':
             if sp > 1:
                 return ETSModel(
-                    train_data, error="add", trend="add",
-                    seasonal="add", seasonal_periods=sp
-                ).fit(disp=False)
-            else:
-                return ETSModel(
-                    train_data, error="add", trend="add"
-                ).fit(disp=False)
-        elif nama_metode == 'ARIMA':
+                    train_data, error='add', trend='add',
+                    seasonal='add', seasonal_periods=sp).fit(disp=False)
+            return ETSModel(train_data, error='add', trend='add').fit(disp=False)
+        elif nama == 'ARIMA':
             return ARIMA(train_data, order=(1, 1, 1)).fit()
-        elif nama_metode == 'Croston':
-            return {'series': train_data, 'alpha': croston_alpha, 'type': 'croston'}
-        else:
-            raise ValueError(f"Metode tidak dikenal: {nama_metode}")
+        elif nama == 'Croston':
+            return {'series': train_data, 'alpha': c_alpha, 'type': 'croston'}
+        raise ValueError(f"Metode tidak dikenal: {nama}")
 
-    def forecast_model(model, nama_metode, steps, croston_alpha=0.1):
-        if nama_metode == 'Croston':
+    def forecast_model(model, nama, steps, c_alpha=0.1):
+        if nama == 'Croston':
             return croston_forecast(model['series'], steps, model['alpha'])
-        elif nama_metode == 'ARIMA':
+        elif nama == 'ARIMA':
             return model.forecast(steps=steps)
-        else:
-            return model.forecast(steps).clip(lower=0)
+        return model.forecast(steps).clip(lower=0)
+
+    def retrain_full(nama, full_data, steps, c_alpha=0.1):
+        m = fit_model(nama, full_data, c_alpha)
+        return forecast_model(m, nama, steps, c_alpha)
 
     # ==========================================
-    # HELPER: RETRAIN DAN FORECAST KE DEPAN
+    # TAMPILKAN HASIL (1 METODE)
     # ==========================================
 
-    def retrain_full(nama_metode, full_data, steps, croston_alpha=0.1):
-        model = fit_model(nama_metode, full_data, croston_alpha)
-        return forecast_model(model, nama_metode, steps, croston_alpha)
-
-    # ==========================================
-    # FUNGSI TAMPILKAN HASIL (1 METODE)
-    # ==========================================
-
-    def tampilkan_hasil(nama_metode, forecast_eval, test_actual, is_rekomendasi=False):
-
-        label_rekomendasi_txt = " ✅ (Rekomendasi Cluster)" if is_rekomendasi else ""
-
-        mae  = mean_absolute_error(test_actual.values, forecast_eval.values)
-        rmse = np.sqrt(mean_squared_error(test_actual.values, forecast_eval.values))
+    def tampilkan_hasil(nama_metode, fc_eval, test_actual, is_rek=False):
+        label_sfx = " ✅ (Rekomendasi)" if is_rek else ""
+        mae  = mean_absolute_error(test_actual.values, fc_eval.values)
+        rmse = np.sqrt(mean_squared_error(test_actual.values, fc_eval.values))
 
         col_m1, col_m2 = st.columns(2)
         with col_m1:
-            st.metric("MAE", f"{mae:.2f}")
+            st.markdown(f"""
+<div class="metric-box">
+  <div class="metric-box-label">MAE</div>
+  <div class="metric-box-val">{mae:.2f}</div>
+</div>""", unsafe_allow_html=True)
         with col_m2:
-            st.metric("RMSE", f"{rmse:.2f}")
+            st.markdown(f"""
+<div class="metric-box">
+  <div class="metric-box-label">RMSE</div>
+  <div class="metric-box-val">{rmse:.2f}</div>
+</div>""", unsafe_allow_html=True)
 
         eval_df = pd.DataFrame({
-            'Periode':              forecast_eval.index.strftime('%b-%Y'),
-            'Hasil Forecast':       np.round(forecast_eval.values, 2),
-            'Data Aktual (Test)':   np.round(test_actual.values, 2)
+            'Periode':            fc_eval.index.strftime('%b-%Y'),
+            'Hasil Forecast':     np.round(fc_eval.values, 2),
+            'Data Aktual (Test)': np.round(test_actual.values, 2)
         })
         eval_df.index = range(1, len(eval_df) + 1)
 
-        st.subheader(f"📋 Hasil Forecast vs Aktual — {nama_metode}{label_rekomendasi_txt}")
+        st.markdown(f"#### 📋 Forecast vs Aktual — {nama_metode}{label_sfx}")
         st.dataframe(eval_df, use_container_width=True)
 
-        fig_eval, ax_eval = plt.subplots(figsize=(12, 5))
-        ax_eval.plot(
-            train.index, train.values,
-            marker='o', color='steelblue', label='Data Train'
-        )
-        ax_eval.plot(
-            test_actual.index, test_actual.values,
-            marker='o', color='orange', label='Data Test (Aktual)'
-        )
-        ax_eval.plot(
-            forecast_eval.index, forecast_eval.values,
-            marker='o', linestyle='--',
-            color=warna_metode.get(nama_metode, 'green'),
-            label=f'Forecast {nama_metode}{label_rekomendasi_txt}'
-        )
-        ax_eval.axvline(
-            x=test_actual.index[0], color='gray',
-            linestyle=':', alpha=0.7, label='Awal Periode Test'
-        )
-        ax_eval.set_title(
-            f'Evaluasi Model — {nama_metode} — Produk {produk}'
-        )
-        ax_eval.legend()
-        ax_eval.grid(True, linestyle='--', alpha=0.5)
-        st.pyplot(fig_eval)
+        # Eval chart
+        fig_ev, ax_ev = plt.subplots(figsize=(13, 5))
+        ax_ev.fill_between(train.index, train.values,
+                           alpha=0.1, color=C['train'])
+        ax_ev.plot(train.index, train.values,
+                   marker='o', color=C['train'], linewidth=2.5,
+                   markerfacecolor='#13161e', markeredgewidth=2,
+                   label='Data Train')
+        ax_ev.plot(test_actual.index, test_actual.values,
+                   marker='o', color=C['test'], linewidth=2.5,
+                   markerfacecolor='#13161e', markeredgewidth=2,
+                   label='Data Test (Aktual)')
+        col_fc = warna_metode.get(nama_metode, '#4f9eff')
+        ax_ev.plot(fc_eval.index, fc_eval.values,
+                   marker='s', linestyle='--', color=col_fc, linewidth=2.5,
+                   markerfacecolor='#13161e', markeredgewidth=2,
+                   label=f'Forecast {nama_metode}{label_sfx}')
+        ax_ev.axvline(x=test_actual.index[0], color='#e8eaf0',
+                      linestyle=':', alpha=0.5, linewidth=1.5,
+                      label='Awal Test')
+        ax_ev.set_title(f'Evaluasi Model — {nama_metode} — {produk}', pad=14)
+        ax_ev.legend()
+        st.pyplot(fig_ev)
+        plt.close()
 
-        st.subheader(f"🔮 Forecast ke Depan — {nama_metode}{label_rekomendasi_txt}")
-        st.info(
-            f"Model di-retrain menggunakan seluruh **{len(data_produk)} bulan** data, "
-            "lalu meramalkan bulan-bulan berikutnya."
-        )
+        # Future forecast
+        st.markdown(f"#### 🔮 Forecast ke Depan — {nama_metode}{label_sfx}")
+        st.markdown(f"""
+<div class="info-block">
+  Model di-retrain menggunakan seluruh <strong>{len(data_produk)} bulan</strong> data,
+  lalu meramalkan {jumlah_forecast} bulan ke depan.
+</div>""", unsafe_allow_html=True)
 
-        future_forecast = retrain_full(nama_metode, data_produk, jumlah_forecast, croston_alpha)
-
+        future_fc = retrain_full(nama_metode, data_produk, jumlah_forecast, croston_alpha)
         future_df = pd.DataFrame({
-            'Periode':        future_forecast.index.strftime('%b-%Y'),
-            'Hasil Forecast': np.round(future_forecast.values, 2)
+            'Periode':        future_fc.index.strftime('%b-%Y'),
+            'Hasil Forecast': np.round(future_fc.values, 2)
         })
         future_df.index = range(1, len(future_df) + 1)
         st.dataframe(future_df, use_container_width=True)
 
-        csv_future = future_df.to_csv().encode('utf-8')
+        csv_fut = future_df.to_csv().encode('utf-8')
         st.download_button(
-            label=f"⬇️ Download Forecast ke Depan ({nama_metode})",
-            data=csv_future,
-            file_name=f'forecast_ke_depan_{produk}_{nama_metode.replace(" ", "_")}.csv',
+            label=f"⬇️  Download Forecast ({nama_metode})",
+            data=csv_fut,
+            file_name=f'forecast_{produk}_{nama_metode.replace(" ","_")}.csv',
             mime='text/csv',
             key=f'dl_{nama_metode}'
         )
 
-        fig_future, ax_future = plt.subplots(figsize=(12, 5))
-        ax_future.plot(
-            data_produk.index, data_produk.values,
-            marker='o', linewidth=2, color='steelblue',
-            label=f'Data Aktual ({len(data_produk)} bulan)'
-        )
-        ax_future.plot(
-            future_forecast.index, future_forecast.values,
-            marker='o', linestyle='--',
-            color=warna_metode.get(nama_metode, 'green'),
-            linewidth=2,
-            label=f'Forecast ke Depan ({nama_metode})'
-        )
-        ax_future.axvline(
-            x=future_forecast.index[0], color='red',
-            linestyle='--', alpha=0.7, label='Awal Periode Forecast'
-        )
-        ax_future.set_title(
-            f'Forecast ke Depan — {nama_metode} — Produk {produk}'
-        )
-        ax_future.legend()
-        ax_future.grid(True, linestyle='--', alpha=0.5)
-        st.pyplot(fig_future)
+        fig_fut, ax_fut = plt.subplots(figsize=(13, 5))
+        ax_fut.fill_between(data_produk.index, data_produk.values,
+                            alpha=0.1, color=C['train'])
+        ax_fut.plot(data_produk.index, data_produk.values,
+                    marker='o', color=C['train'], linewidth=2.5,
+                    markerfacecolor='#13161e', markeredgewidth=2,
+                    label=f'Data Aktual ({len(data_produk)} bulan)')
+        ax_fut.fill_between(future_fc.index, future_fc.values,
+                            alpha=0.15, color=col_fc)
+        ax_fut.plot(future_fc.index, future_fc.values,
+                    marker='o', linestyle='-', color=col_fc, linewidth=2.5,
+                    markerfacecolor='#13161e', markeredgewidth=2,
+                    label=f'Forecast ke Depan ({nama_metode})')
+        ax_fut.axvline(x=future_fc.index[0], color='#ff6b6b',
+                       linestyle='--', alpha=0.7, linewidth=1.5,
+                       label='Awal Forecast')
+        ax_fut.set_title(f'Forecast ke Depan — {nama_metode} — {produk}', pad=14)
+        ax_fut.legend()
+        st.pyplot(fig_fut)
+        plt.close()
 
         return mae, rmse
 
     # ==========================================
-    # EKSEKUSI BERDASARKAN METODE TERPILIH
+    # EKSEKUSI
     # ==========================================
 
-    is_rekomendasi = (metode == metode_rekomendasi)
+    is_rek = (metode == metode_rekomendasi)
 
     if metode != "Perbandingan Semua Metode":
         try:
-            model_fit  = fit_model(metode, train, croston_alpha)
-            fc_eval    = forecast_model(model_fit, metode, jumlah_forecast, croston_alpha)
-            tampilkan_hasil(metode, fc_eval, test, is_rekomendasi=is_rekomendasi)
+            m_fit = fit_model(metode, train, croston_alpha)
+            fc_ev = forecast_model(m_fit, metode, jumlah_forecast, croston_alpha)
+            tampilkan_hasil(metode, fc_ev, test, is_rek=is_rek)
         except Exception as e:
             st.error(f"❌ Metode {metode} gagal: {e}")
 
@@ -662,8 +1090,8 @@ if uploaded_file is not None:
 
         for nm in ['HW Additive', 'HW Multiplicative', 'ETS', 'ARIMA', 'Croston']:
             try:
-                m   = fit_model(nm, train, croston_alpha)
-                fc  = forecast_model(m, nm, jumlah_forecast, croston_alpha)
+                m  = fit_model(nm, train, croston_alpha)
+                fc = forecast_model(m, nm, jumlah_forecast, croston_alpha)
                 hasil_eval[nm] = {
                     'forecast': fc,
                     'mae':  mean_absolute_error(test.values, fc.values),
@@ -671,7 +1099,7 @@ if uploaded_file is not None:
                 }
                 hasil_future[nm] = retrain_full(nm, data_produk, jumlah_forecast, croston_alpha)
             except Exception as e:
-                st.warning(f"⚠️ Metode {nm} dilewati karena error: {e}")
+                st.warning(f"⚠️ Metode {nm} dilewati: {e}")
 
         if not hasil_eval:
             st.error("Semua metode gagal. Coba kurangi jumlah forecast.")
@@ -679,78 +1107,90 @@ if uploaded_file is not None:
 
         perbandingan = pd.DataFrame([
             {
-                'Metode':             m,
-                'MAE':                round(v['mae'],  2),
-                'RMSE':               round(v['rmse'], 2),
+                'Metode':              m,
+                'MAE':                 round(v['mae'],  2),
+                'RMSE':                round(v['rmse'], 2),
                 'Rekomendasi Cluster': '✅' if m == metode_rekomendasi else ''
             }
             for m, v in hasil_eval.items()
         ])
         perbandingan.index = range(1, len(perbandingan) + 1)
 
-        st.subheader("📊 Perbandingan MAE & RMSE Semua Metode")
+        st.markdown("#### 📊 Perbandingan MAE & RMSE Semua Metode")
         st.dataframe(perbandingan, use_container_width=True)
 
-        fig_mae, ax_mae = plt.subplots(figsize=(10, 5))
-        bar_colors = [
-            '#e74c3c' if m == metode_rekomendasi else warna_metode.get(m, 'gray')
+        # Bar chart perbandingan
+        fig_cmp, axes_cmp = plt.subplots(1, 2, figsize=(14, 5))
+        bar_c = [
+            '#ff6b6b' if m == metode_rekomendasi else warna_metode.get(m, '#888')
             for m in perbandingan['Metode']
         ]
-        bars = ax_mae.bar(perbandingan['Metode'], perbandingan['MAE'], color=bar_colors)
-        ax_mae.bar_label(bars, fmt='%.2f', padding=3)
-        ax_mae.set_title('Perbandingan Nilai MAE — Semua Metode\n(merah = rekomendasi cluster)')
-        ax_mae.set_ylabel('MAE')
-        ax_mae.grid(True, linestyle='--', alpha=0.5)
-        st.pyplot(fig_mae)
 
-        fig_rmse, ax_rmse = plt.subplots(figsize=(10, 5))
-        bars2 = ax_rmse.bar(perbandingan['Metode'], perbandingan['RMSE'], color=bar_colors)
-        ax_rmse.bar_label(bars2, fmt='%.2f', padding=3)
-        ax_rmse.set_title('Perbandingan Nilai RMSE — Semua Metode\n(merah = rekomendasi cluster)')
-        ax_rmse.set_ylabel('RMSE')
-        ax_rmse.grid(True, linestyle='--', alpha=0.5)
-        st.pyplot(fig_rmse)
+        for ax_i, col_y, lbl in zip(axes_cmp, ['MAE', 'RMSE'], ['MAE', 'RMSE']):
+            brs = ax_i.bar(perbandingan['Metode'], perbandingan[col_y],
+                           color=bar_c, width=0.5,
+                           edgecolor='#1e2435', linewidth=1.5)
+            for b, v in zip(brs, perbandingan[col_y]):
+                ax_i.text(b.get_x() + b.get_width()/2,
+                          b.get_height() + perbandingan[col_y].max() * 0.02,
+                          f'{v:.2f}', ha='center', va='bottom',
+                          fontsize=9, color='#e8eaf0', fontweight='bold')
+            ax_i.set_title(f'Perbandingan {lbl}\n(merah = rekomendasi cluster)')
+            ax_i.set_ylabel(lbl)
+            ax_i.set_ylim(0, perbandingan[col_y].max() * 1.25)
+            ax_i.tick_params(axis='x', rotation=15)
 
-        best_idx       = perbandingan['MAE'].idxmin()
+        plt.tight_layout()
+        st.pyplot(fig_cmp)
+        plt.close()
+
+        # Kesimpulan
+        best_idx = perbandingan['MAE'].idxmin()
         metode_terbaik = perbandingan.loc[best_idx]
-
         if metode_terbaik['Metode'] == metode_rekomendasi:
             st.success(
-                f"✅ Metode terbaik adalah **{metode_terbaik['Metode']}** "
+                f"✅ Metode terbaik: **{metode_terbaik['Metode']}** "
                 f"(MAE={metode_terbaik['MAE']:.2f}, RMSE={metode_terbaik['RMSE']:.2f}) "
                 f"— sesuai rekomendasi cluster **{pilih_cluster}**!"
             )
         else:
             st.warning(
-                f"ℹ️ Metode terbaik secara metrik adalah **{metode_terbaik['Metode']}** "
+                f"ℹ️ Metode terbaik secara metrik: **{metode_terbaik['Metode']}** "
                 f"(MAE={metode_terbaik['MAE']:.2f}, RMSE={metode_terbaik['RMSE']:.2f}). "
                 f"Rekomendasi cluster (**{metode_rekomendasi}**) berada di posisi lain."
             )
 
-        st.subheader("📉 Grafik Evaluasi Gabungan (Train vs Test vs Forecast)")
-        fig_eval, ax_eval = plt.subplots(figsize=(14, 6))
-        ax_eval.plot(train.index, train.values, marker='o', linewidth=2, color='steelblue', label='Data Train')
-        ax_eval.plot(test.index,  test.values,  marker='o', linewidth=2, color='orange',   label='Data Test (Aktual)')
+        # Grafik evaluasi gabungan
+        st.markdown("#### 📉 Grafik Evaluasi Gabungan")
+        fig_eg, ax_eg = plt.subplots(figsize=(14, 6))
+        ax_eg.fill_between(train.index, train.values, alpha=0.08, color=C['train'])
+        ax_eg.plot(train.index, train.values,
+                   marker='o', linewidth=2.5, color=C['train'],
+                   markerfacecolor='#13161e', markeredgewidth=2, label='Data Train')
+        ax_eg.plot(test.index, test.values,
+                   marker='o', linewidth=2.5, color=C['test'],
+                   markerfacecolor='#13161e', markeredgewidth=2, label='Data Test (Aktual)')
         for nm, v in hasil_eval.items():
             lw = 2.5 if nm == metode_rekomendasi else 1.5
             ls = '-' if nm == metode_rekomendasi else '--'
-            ax_eval.plot(
-                v['forecast'].index, v['forecast'].values,
-                linestyle=ls, marker='s', linewidth=lw,
-                color=warna_metode[nm],
-                label=f'Forecast {nm}{"  ← rekomendasi" if nm == metode_rekomendasi else ""}'
-            )
-        ax_eval.axvline(x=test.index[0], color='gray', linestyle=':', alpha=0.7, label='Awal Test')
-        ax_eval.set_title(f'Evaluasi Gabungan Semua Metode — Produk {produk}')
-        ax_eval.legend(loc='upper left')
-        ax_eval.grid(True, linestyle='--', alpha=0.5)
-        st.pyplot(fig_eval)
+            ax_eg.plot(v['forecast'].index, v['forecast'].values,
+                       linestyle=ls, marker='s', linewidth=lw,
+                       color=warna_metode[nm],
+                       markerfacecolor='#13161e', markeredgewidth=1.5,
+                       label=f'{nm}{"  ← rek." if nm == metode_rekomendasi else ""}')
+        ax_eg.axvline(x=test.index[0], color='#e8eaf0',
+                      linestyle=':', alpha=0.5, linewidth=1.5, label='Awal Test')
+        ax_eg.set_title(f'Evaluasi Gabungan Semua Metode — {produk}', pad=14)
+        ax_eg.legend(loc='upper left', framealpha=0.8)
+        st.pyplot(fig_eg)
+        plt.close()
 
-        st.subheader("🔮 Forecast ke Depan — Semua Metode")
-        st.info(
-            f"Semua model di-retrain menggunakan seluruh **{len(data_produk)} bulan** data, "
-            "lalu meramalkan bulan-bulan berikutnya."
-        )
+        # Forecast ke depan gabungan
+        st.markdown("#### 🔮 Forecast ke Depan — Semua Metode")
+        st.markdown(f"""
+<div class="info-block">
+  Semua model di-retrain menggunakan seluruh <strong>{len(data_produk)} bulan</strong> data.
+</div>""", unsafe_allow_html=True)
 
         future_index = list(hasil_future.values())[0].index
         future_combined = pd.DataFrame({'Periode': future_index.strftime('%b-%Y')})
@@ -759,44 +1199,44 @@ if uploaded_file is not None:
         future_combined.index = range(1, len(future_combined) + 1)
         st.dataframe(future_combined, use_container_width=True)
 
-        csv_future_all = future_combined.to_csv().encode('utf-8')
+        csv_all = future_combined.to_csv().encode('utf-8')
         st.download_button(
-            label="⬇️ Download Forecast ke Depan (Semua Metode)",
-            data=csv_future_all,
-            file_name=f'forecast_ke_depan_{produk}_semua_metode.csv',
+            label="⬇️  Download Forecast ke Depan (Semua Metode)",
+            data=csv_all,
+            file_name=f'forecast_{produk}_semua_metode.csv',
             mime='text/csv',
             key='dl_semua'
         )
 
-        fig_fut_all, ax_fut_all = plt.subplots(figsize=(14, 6))
-        ax_fut_all.plot(
-            data_produk.index, data_produk.values,
-            marker='o', linewidth=2, color='steelblue',
-            label=f'Data Aktual ({len(data_produk)} bulan)'
-        )
+        fig_fall, ax_fall = plt.subplots(figsize=(14, 6))
+        ax_fall.fill_between(data_produk.index, data_produk.values,
+                             alpha=0.08, color=C['train'])
+        ax_fall.plot(data_produk.index, data_produk.values,
+                     marker='o', linewidth=2.5, color=C['train'],
+                     markerfacecolor='#13161e', markeredgewidth=2,
+                     label=f'Data Aktual ({len(data_produk)} bulan)')
         for nm, fc in hasil_future.items():
             lw = 2.5 if nm == metode_rekomendasi else 1.5
             ls = '-' if nm == metode_rekomendasi else '--'
-            ax_fut_all.plot(
-                fc.index, fc.values,
-                linestyle=ls, marker='s', linewidth=lw,
-                color=warna_metode[nm],
-                label=f'Forecast — {nm}{"  ← rekomendasi" if nm == metode_rekomendasi else ""}'
-            )
-        ax_fut_all.axvline(
-            x=list(hasil_future.values())[0].index[0],
-            color='red', linestyle='--', alpha=0.7, label='Awal Forecast'
-        )
-        ax_fut_all.set_title(f'Forecast ke Depan Gabungan — Produk {produk}')
-        ax_fut_all.legend(loc='upper left')
-        ax_fut_all.grid(True, linestyle='--', alpha=0.5)
-        st.pyplot(fig_fut_all)
+            ax_fall.plot(fc.index, fc.values,
+                         linestyle=ls, marker='s', linewidth=lw,
+                         color=warna_metode[nm],
+                         markerfacecolor='#13161e', markeredgewidth=1.5,
+                         label=f'{nm}{"  ← rek." if nm == metode_rekomendasi else ""}')
+        ax_fall.axvline(x=list(hasil_future.values())[0].index[0],
+                        color='#ff6b6b', linestyle='--', alpha=0.7, linewidth=1.5,
+                        label='Awal Forecast')
+        ax_fall.set_title(f'Forecast ke Depan Gabungan — {produk}', pad=14)
+        ax_fall.legend(loc='upper left', framealpha=0.8)
+        st.pyplot(fig_fall)
+        plt.close()
 
+        # Rekomendasi cluster saja
         if metode_rekomendasi in hasil_future:
-            st.subheader(
-                f"🏷️ Forecast ke Depan — Metode Rekomendasi Cluster "
-                f"({pilih_cluster}): {metode_rekomendasi}"
-            )
+            col_rek = cat_colors_css[pilih_cluster]
+            st.markdown(f"""
+#### 🏷️ Forecast Rekomendasi Cluster — {pilih_cluster}: {metode_rekomendasi}
+""")
             fc_rek = hasil_future[metode_rekomendasi]
             rek_df = pd.DataFrame({
                 'Periode':        fc_rek.index.strftime('%b-%Y'),
@@ -807,32 +1247,32 @@ if uploaded_file is not None:
 
             csv_rek = rek_df.to_csv().encode('utf-8')
             st.download_button(
-                label=f"⬇️ Download Forecast Rekomendasi ({metode_rekomendasi})",
+                label=f"⬇️  Download Forecast Rekomendasi ({metode_rekomendasi})",
                 data=csv_rek,
-                file_name=f'forecast_rekomendasi_{produk}_{metode_rekomendasi.replace(" ", "_")}.csv',
+                file_name=f'forecast_rek_{produk}_{metode_rekomendasi.replace(" ","_")}.csv',
                 mime='text/csv',
-                key='dl_rekomendasi'
+                key='dl_rek'
             )
 
-            fig_rek, ax_rek = plt.subplots(figsize=(12, 5))
-            ax_rek.plot(
-                data_produk.index, data_produk.values,
-                marker='o', linewidth=2, color='steelblue',
-                label=f'Data Aktual ({len(data_produk)} bulan)'
-            )
-            ax_rek.plot(
-                fc_rek.index, fc_rek.values,
-                marker='o', linestyle='-', linewidth=2.5,
-                color=warna_metode.get(metode_rekomendasi, 'green'),
-                label=f'Forecast — {metode_rekomendasi} (Rekomendasi {pilih_cluster})'
-            )
-            ax_rek.axvline(
-                x=fc_rek.index[0], color='red',
-                linestyle='--', alpha=0.7, label='Awal Forecast'
-            )
+            fig_rek, ax_rek = plt.subplots(figsize=(13, 5))
+            ax_rek.fill_between(data_produk.index, data_produk.values,
+                                alpha=0.1, color=C['train'])
+            ax_rek.plot(data_produk.index, data_produk.values,
+                        marker='o', linewidth=2.5, color=C['train'],
+                        markerfacecolor='#13161e', markeredgewidth=2,
+                        label=f'Data Aktual ({len(data_produk)} bulan)')
+            ax_rek.fill_between(fc_rek.index, fc_rek.values,
+                                alpha=0.15, color=col_rek)
+            ax_rek.plot(fc_rek.index, fc_rek.values,
+                        marker='o', linestyle='-', linewidth=2.5,
+                        color=col_rek,
+                        markerfacecolor='#13161e', markeredgewidth=2,
+                        label=f'Forecast — {metode_rekomendasi} (Rekomendasi)')
+            ax_rek.axvline(x=fc_rek.index[0], color='#ff6b6b',
+                           linestyle='--', alpha=0.7, linewidth=1.5,
+                           label='Awal Forecast')
             ax_rek.set_title(
-                f'Forecast Rekomendasi Cluster — {metode_rekomendasi} — Produk {produk}'
-            )
+                f'Forecast Rekomendasi — {metode_rekomendasi} — {produk}', pad=14)
             ax_rek.legend()
-            ax_rek.grid(True, linestyle='--', alpha=0.5)
             st.pyplot(fig_rek)
+            plt.close()
