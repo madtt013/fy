@@ -499,6 +499,106 @@ CLUSTER_METHOD_MAP = {
 }
 
 # ==========================================
+# METRIK ERROR PER CLUSTER
+# ==========================================
+
+def calc_mape(actual, forecast):
+    a, f = np.array(actual, float), np.array(forecast, float)
+    mask = a != 0
+    if mask.sum() == 0:
+        return np.nan
+    return np.mean(np.abs((a[mask] - f[mask]) / a[mask])) * 100
+
+def calc_smape(actual, forecast):
+    a, f = np.array(actual, float), np.array(forecast, float)
+    denom = (np.abs(a) + np.abs(f)) / 2
+    mask = denom != 0
+    if mask.sum() == 0:
+        return np.nan
+    return np.mean(np.abs(a[mask] - f[mask]) / denom[mask]) * 100
+
+def calc_mase(actual, forecast, train):
+    a, f, tr = np.array(actual, float), np.array(forecast, float), np.array(train, float)
+    naive_mae = np.mean(np.abs(np.diff(tr)))
+    if naive_mae == 0:
+        return np.nan
+    return np.mean(np.abs(a - f)) / naive_mae
+
+def calc_mfe(actual, forecast):
+    """Bias: positif = over-forecast (stok numpuk), negatif = under-forecast (stok kurang)."""
+    a, f = np.array(actual, float), np.array(forecast, float)
+    return np.mean(f - a)
+
+# Pemetaan cluster → metrik yang paling cocok
+CLUSTER_ERROR_MAP = {
+    'Fast Moving': {
+        'primary_key':   'MAPE',
+        'primary_unit':  '%',
+        'secondary_key': 'RMSE',
+        'secondary_unit':'',
+        'rationale': (
+            "MAPE dipilih karena volume Fast Moving tinggi dan jarang bernilai nol, "
+            "sehingga pembagian aman. Hasilnya intuitif (persentase kesalahan). "
+            "RMSE sebagai pelengkap untuk menangkap outlier besar. "
+            "MFE/Bias penting agar tidak terjadi over-stok sistematis."
+        ),
+    },
+    'Medium Moving': {
+        'primary_key':   'sMAPE',
+        'primary_unit':  '%',
+        'secondary_key': 'RMSE',
+        'secondary_unit':'',
+        'rationale': (
+            "sMAPE dipilih karena Medium Moving kadang memiliki nilai mendekati nol — "
+            "sMAPE simetris dan tidak meledak saat aktual atau forecast kecil. "
+            "RMSE tetap disertakan untuk sensitifitas terhadap kesalahan besar. "
+            "MFE/Bias untuk memantau apakah model cenderung over/under-forecast."
+        ),
+    },
+    'Slow Moving': {
+        'primary_key':   'MASE',
+        'primary_unit':  '',
+        'secondary_key': 'sMAPE',
+        'secondary_unit':'%',
+        'rationale': (
+            "MASE adalah gold standard untuk intermittent demand (Croston) — "
+            "tidak terpengaruh nilai nol karena membandingkan error model vs naive forecast. "
+            "MASE < 1 berarti model mengalahkan random walk. "
+            "sMAPE sebagai pelengkap. MFE krusial untuk keputusan reorder point."
+        ),
+    },
+}
+
+def compute_cluster_metrics(actual, forecast, train, cluster_kat):
+    """Hitung semua metrik relevan untuk cluster tertentu."""
+    info  = CLUSTER_ERROR_MAP[cluster_kat]
+    rmse  = float(np.sqrt(mean_squared_error(actual, forecast)))
+    mfe   = calc_mfe(actual, forecast)
+
+    if info['primary_key'] == 'MAPE':
+        primary_val = calc_mape(actual, forecast)
+    elif info['primary_key'] == 'sMAPE':
+        primary_val = calc_smape(actual, forecast)
+    else:  # MASE
+        primary_val = calc_mase(actual, forecast, train)
+
+    if info['secondary_key'] == 'RMSE':
+        secondary_val = rmse
+    else:  # sMAPE
+        secondary_val = calc_smape(actual, forecast)
+
+    return {
+        'primary_key':    info['primary_key'],
+        'primary_unit':   info['primary_unit'],
+        'primary_val':    primary_val,
+        'secondary_key':  info['secondary_key'],
+        'secondary_unit': info['secondary_unit'],
+        'secondary_val':  secondary_val,
+        'mfe':            mfe,
+        'rmse':           rmse,
+    }
+
+# ==========================================
 # HERO SECTION
 # ==========================================
 
@@ -964,23 +1064,58 @@ if uploaded_file is not None:
     # TAMPILKAN HASIL (1 METODE)
     # ==========================================
 
-    def tampilkan_hasil(nama_metode, fc_eval, test_actual, is_rek=False):
+    def tampilkan_hasil(nama_metode, fc_eval, test_actual, train_data,
+                        cluster_kat='Fast Moving', is_rek=False):
         label_sfx = " ✅ (Rekomendasi)" if is_rek else ""
-        mae  = mean_absolute_error(test_actual.values, fc_eval.values)
-        rmse = np.sqrt(mean_squared_error(test_actual.values, fc_eval.values))
 
-        col_m1, col_m2 = st.columns(2)
+        # Hitung metrik sesuai cluster
+        m = compute_cluster_metrics(
+            test_actual.values, fc_eval.values,
+            train_data.values, cluster_kat
+        )
+
+        # Rationale info-block
+        err_info = CLUSTER_ERROR_MAP[cluster_kat]
+        st.markdown(f"""
+<div class="info-block" style="margin-bottom:0.8rem;">
+  📐 <strong>Metrik Error untuk {cluster_kat}:</strong><br>
+  <span style="font-size:0.82rem;color:var(--text-muted)">{err_info['rationale']}</span>
+</div>""", unsafe_allow_html=True)
+
+        # Tentukan warna MFE
+        mfe_color = '#ff6b6b' if m['mfe'] > 0 else ('#4ade80' if m['mfe'] < 0 else '#8892a4')
+        mfe_label = "Over-forecast ▲" if m['mfe'] > 0 else ("Under-forecast ▼" if m['mfe'] < 0 else "Tidak Bias")
+
+        # Format primary value
+        if m['primary_key'] == 'MASE':
+            primary_fmt = f"{m['primary_val']:.3f}" if not np.isnan(m['primary_val']) else "N/A"
+        else:
+            primary_fmt = f"{m['primary_val']:.2f}{m['primary_unit']}" if not np.isnan(m['primary_val']) else "N/A"
+
+        secondary_unit_str = m['secondary_unit'] if m['secondary_unit'] else ''
+        secondary_fmt = f"{m['secondary_val']:.2f}{secondary_unit_str}"
+
+        col_m1, col_m2, col_m3 = st.columns(3)
         with col_m1:
             st.markdown(f"""
 <div class="metric-box">
-  <div class="metric-box-label">MAE</div>
-  <div class="metric-box-val">{mae:.2f}</div>
+  <div class="metric-box-label">⭐ {m['primary_key']} (Primary)</div>
+  <div class="metric-box-val">{primary_fmt}</div>
 </div>""", unsafe_allow_html=True)
         with col_m2:
             st.markdown(f"""
 <div class="metric-box">
-  <div class="metric-box-label">RMSE</div>
-  <div class="metric-box-val">{rmse:.2f}</div>
+  <div class="metric-box-label">{m['secondary_key']} (Secondary)</div>
+  <div class="metric-box-val">{secondary_fmt}</div>
+</div>""", unsafe_allow_html=True)
+        with col_m3:
+            st.markdown(f"""
+<div class="metric-box">
+  <div class="metric-box-label">MFE / Bias</div>
+  <div class="metric-box-val" style="font-size:1.4rem;color:{mfe_color}">
+    {m['mfe']:+.2f}
+  </div>
+  <div style="font-size:0.7rem;color:{mfe_color};margin-top:4px">{mfe_label}</div>
 </div>""", unsafe_allow_html=True)
 
         eval_df = pd.DataFrame({
@@ -1064,7 +1199,7 @@ if uploaded_file is not None:
         st.pyplot(fig_fut)
         plt.close()
 
-        return mae, rmse
+        return m['primary_val'], m['secondary_val'], m['mfe']
 
     # ==========================================
     # EKSEKUSI
@@ -1076,7 +1211,8 @@ if uploaded_file is not None:
         try:
             m_fit = fit_model(metode, train, croston_alpha)
             fc_ev = forecast_model(m_fit, metode, jumlah_forecast, croston_alpha)
-            tampilkan_hasil(metode, fc_ev, test, is_rek=is_rek)
+            tampilkan_hasil(metode, fc_ev, test, train,
+                            cluster_kat=pilih_cluster, is_rek=is_rek)
         except Exception as e:
             st.error(f"❌ Metode {metode} gagal: {e}")
 
@@ -1092,10 +1228,21 @@ if uploaded_file is not None:
             try:
                 m  = fit_model(nm, train, croston_alpha)
                 fc = forecast_model(m, nm, jumlah_forecast, croston_alpha)
+                metrics = compute_cluster_metrics(
+                    test.values, fc.values, train.values, pilih_cluster
+                )
                 hasil_eval[nm] = {
-                    'forecast': fc,
-                    'mae':  mean_absolute_error(test.values, fc.values),
-                    'rmse': np.sqrt(mean_squared_error(test.values, fc.values))
+                    'forecast':       fc,
+                    'primary_key':    metrics['primary_key'],
+                    'primary_unit':   metrics['primary_unit'],
+                    'primary_val':    metrics['primary_val'],
+                    'secondary_key':  metrics['secondary_key'],
+                    'secondary_unit': metrics['secondary_unit'],
+                    'secondary_val':  metrics['secondary_val'],
+                    'mfe':            metrics['mfe'],
+                    # tetap simpan mae & rmse untuk referensi
+                    'mae':  float(mean_absolute_error(test.values, fc.values)),
+                    'rmse': metrics['rmse'],
                 }
                 hasil_future[nm] = retrain_full(nm, data_produk, jumlah_forecast, croston_alpha)
             except Exception as e:
@@ -1105,60 +1252,113 @@ if uploaded_file is not None:
             st.error("Semua metode gagal. Coba kurangi jumlah forecast.")
             st.stop()
 
+        primary_key   = list(hasil_eval.values())[0]['primary_key']
+        primary_unit  = list(hasil_eval.values())[0]['primary_unit']
+        secondary_key = list(hasil_eval.values())[0]['secondary_key']
+        secondary_unit = list(hasil_eval.values())[0]['secondary_unit']
+
+        # Info metrik yang dipakai
+        err_info = CLUSTER_ERROR_MAP[pilih_cluster]
+        st.markdown(f"""
+<div class="info-block" style="margin-bottom:1rem;">
+  📐 <strong>Metrik yang digunakan untuk cluster {pilih_cluster}:</strong>
+  Primary = <code style="background:rgba(79,158,255,0.15);padding:2px 8px;
+  border-radius:4px;color:#4f9eff">{primary_key}</code>
+  &nbsp;·&nbsp; Secondary = <code style="background:rgba(79,158,255,0.15);
+  padding:2px 8px;border-radius:4px;color:#4f9eff">{secondary_key}</code>
+  &nbsp;·&nbsp; MFE/Bias<br>
+  <span style="font-size:0.8rem;color:var(--text-muted)">{err_info['rationale']}</span>
+</div>""", unsafe_allow_html=True)
+
+        def fmt_val(v, unit):
+            if np.isnan(v): return "N/A"
+            if unit == '%': return f"{v:.2f}%"
+            if primary_key == 'MASE' and unit == '': return f"{v:.3f}"
+            return f"{v:.2f}"
+
         perbandingan = pd.DataFrame([
             {
-                'Metode':              m,
-                'MAE':                 round(v['mae'],  2),
-                'RMSE':                round(v['rmse'], 2),
-                'Rekomendasi Cluster': '✅' if m == metode_rekomendasi else ''
+                'Metode':                    m,
+                f'{primary_key} ⭐ (Primary)': fmt_val(v['primary_val'], primary_unit),
+                f'{secondary_key} (Secondary)': fmt_val(v['secondary_val'], secondary_unit),
+                'MFE / Bias':                f"{v['mfe']:+.2f}",
+                'Rekomendasi Cluster':       '✅' if m == metode_rekomendasi else ''
             }
             for m, v in hasil_eval.items()
         ])
         perbandingan.index = range(1, len(perbandingan) + 1)
 
-        st.markdown("#### 📊 Perbandingan MAE & RMSE Semua Metode")
+        st.markdown(f"#### 📊 Perbandingan {primary_key} & {secondary_key} Semua Metode")
         st.dataframe(perbandingan, use_container_width=True)
+
+        # Siapkan nilai numerik untuk bar chart
+        primary_vals_num   = [v['primary_val']   for v in hasil_eval.values()]
+        secondary_vals_num = [v['secondary_val'] for v in hasil_eval.values()]
+        metode_labels      = list(hasil_eval.keys())
+
+        bar_c = [
+            '#ff6b6b' if nm == metode_rekomendasi else warna_metode.get(nm, '#888')
+            for nm in metode_labels
+        ]
 
         # Bar chart perbandingan
         fig_cmp, axes_cmp = plt.subplots(1, 2, figsize=(14, 5))
-        bar_c = [
-            '#ff6b6b' if m == metode_rekomendasi else warna_metode.get(m, '#888')
-            for m in perbandingan['Metode']
+        chart_data = [
+            (primary_vals_num,   primary_key,   primary_unit),
+            (secondary_vals_num, secondary_key, secondary_unit),
         ]
-
-        for ax_i, col_y, lbl in zip(axes_cmp, ['MAE', 'RMSE'], ['MAE', 'RMSE']):
-            brs = ax_i.bar(perbandingan['Metode'], perbandingan[col_y],
-                           color=bar_c, width=0.5,
+        for ax_i, (vals, lbl, unit) in zip(axes_cmp, chart_data):
+            # Filter NaN untuk max aman
+            valid_vals = [v for v in vals if not np.isnan(v)]
+            if not valid_vals:
+                ax_i.set_title(f'{lbl} — tidak tersedia')
+                continue
+            brs = ax_i.bar(metode_labels, vals, color=bar_c, width=0.5,
                            edgecolor='#1e2435', linewidth=1.5)
-            for b, v in zip(brs, perbandingan[col_y]):
-                ax_i.text(b.get_x() + b.get_width()/2,
-                          b.get_height() + perbandingan[col_y].max() * 0.02,
-                          f'{v:.2f}', ha='center', va='bottom',
+            for b, v in zip(brs, vals):
+                if np.isnan(v):
+                    continue
+                label_str = f"{v:.3f}" if lbl == 'MASE' else f"{v:.2f}{unit}"
+                ax_i.text(b.get_x() + b.get_width() / 2,
+                          b.get_height() + max(valid_vals) * 0.02,
+                          label_str, ha='center', va='bottom',
                           fontsize=9, color='#e8eaf0', fontweight='bold')
-            ax_i.set_title(f'Perbandingan {lbl}\n(merah = rekomendasi cluster)')
-            ax_i.set_ylabel(lbl)
-            ax_i.set_ylim(0, perbandingan[col_y].max() * 1.25)
+            ax_i.set_title(f'Perbandingan {lbl}{unit}\n(merah = rekomendasi cluster)')
+            ax_i.set_ylabel(f'{lbl}{unit}')
+            ax_i.set_ylim(0, max(valid_vals) * 1.25)
             ax_i.tick_params(axis='x', rotation=15)
 
         plt.tight_layout()
         st.pyplot(fig_cmp)
         plt.close()
 
-        # Kesimpulan
-        best_idx = perbandingan['MAE'].idxmin()
-        metode_terbaik = perbandingan.loc[best_idx]
-        if metode_terbaik['Metode'] == metode_rekomendasi:
-            st.success(
-                f"✅ Metode terbaik: **{metode_terbaik['Metode']}** "
-                f"(MAE={metode_terbaik['MAE']:.2f}, RMSE={metode_terbaik['RMSE']:.2f}) "
-                f"— sesuai rekomendasi cluster **{pilih_cluster}**!"
+        # Kesimpulan — ranking berdasarkan primary metric cluster
+        primary_series = {nm: v['primary_val'] for nm, v in hasil_eval.items()}
+        valid_primary  = {nm: pv for nm, pv in primary_series.items() if not np.isnan(pv)}
+        if valid_primary:
+            best_nm  = min(valid_primary, key=valid_primary.get)
+            best_pv  = valid_primary[best_nm]
+            best_sv  = hasil_eval[best_nm]['secondary_val']
+            pv_str   = f"{best_pv:.3f}" if primary_key == 'MASE' else f"{best_pv:.2f}{primary_unit}"
+            sv_str   = f"{best_sv:.2f}{secondary_unit}"
+            rek_pv   = primary_series.get(metode_rekomendasi, float('nan'))
+            rek_pv_str = (
+                f"{rek_pv:.3f}" if primary_key == 'MASE'
+                else (f"{rek_pv:.2f}{primary_unit}" if not np.isnan(rek_pv) else "N/A")
             )
-        else:
-            st.warning(
-                f"ℹ️ Metode terbaik secara metrik: **{metode_terbaik['Metode']}** "
-                f"(MAE={metode_terbaik['MAE']:.2f}, RMSE={metode_terbaik['RMSE']:.2f}). "
-                f"Rekomendasi cluster (**{metode_rekomendasi}**) berada di posisi lain."
-            )
+            if best_nm == metode_rekomendasi:
+                st.success(
+                    f"✅ Metode terbaik: **{best_nm}** "
+                    f"({primary_key}={pv_str}, {secondary_key}={sv_str}) "
+                    f"— sesuai rekomendasi cluster **{pilih_cluster}**!"
+                )
+            else:
+                st.warning(
+                    f"ℹ️ Metode terbaik secara {primary_key}: **{best_nm}** "
+                    f"({primary_key}={pv_str}, {secondary_key}={sv_str}). "
+                    f"Rekomendasi cluster **{metode_rekomendasi}** "
+                    f"({primary_key}={rek_pv_str}) berada di posisi lain."
+                )
 
         # Grafik evaluasi gabungan
         st.markdown("#### 📉 Grafik Evaluasi Gabungan")
